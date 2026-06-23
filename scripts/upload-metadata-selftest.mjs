@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   chatGptConversationScopeUrl,
+  classifyUploadEvidence,
   describeUploadFiles,
   messageUploadScopeKey,
   prepareUploadFiles,
@@ -132,6 +133,34 @@ try {
       projectUrl: "https://chatgpt.com/g/polymarket-lp",
     }),
     "project-source|cgpt_repo|https://chatgpt.com/g/polymarket-lp",
+  );
+  assert.deepEqual(
+    classifyUploadEvidence({
+      duplicateUploadModal: true,
+      formText: "You've already uploaded this file. Try uploading something new.",
+      chips: [],
+      inputFiles: [],
+    }, ["upload-note.txt"]),
+    {
+      allVisible: false,
+      duplicateUploadModal: true,
+      uploading: false,
+      visibleFileNames: [],
+    },
+  );
+  assert.deepEqual(
+    classifyUploadEvidence({
+      duplicateUploadModal: false,
+      formText: "Uploading...",
+      chips: [{ text: "upload-note.txt", aria: "", testid: "" }],
+      inputFiles: [],
+    }, ["upload-note.txt"]),
+    {
+      allVisible: true,
+      duplicateUploadModal: false,
+      uploading: true,
+      visibleFileNames: ["upload-note.txt"],
+    },
   );
 
   assert.throws(

@@ -110,6 +110,8 @@ At call start, after the wrapper confirms there is no active ChatGPT generation,
 it may dismiss stale duplicate-upload modals and remove stale composer
 attachments left by an older failed run. This cleanup must never stop, reload,
 retry, or type over an active run.
+During and after upload, the wrapper must check for the duplicate-upload modal
+again and dismiss it so it cannot block the composer or send button.
 For a modal that appears outside a normal call, agents may run
 `chatgpt-pro cleanup duplicate-upload`. The command scans visible ChatGPT tabs
 and dismisses only duplicate-upload OK modals. If generation state is active or
