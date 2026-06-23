@@ -27,8 +27,11 @@ function roomSummary(room) {
   return {
     alias: room.alias,
     requestedAlias: room.requestedAlias || room.alias,
+    scope: room.scope || null,
     agentScoped: room.agentScoped === true,
+    taskScoped: room.taskScoped === true,
     agent: room.agent || null,
+    task: room.task || null,
     taskTitle: room.taskTitle || "",
     roomLabel: room.roomLabel || "",
     activeConversationUrl: room.activeConversationUrl || room.conversationUrl || room.url || null,

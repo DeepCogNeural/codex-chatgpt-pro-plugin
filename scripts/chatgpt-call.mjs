@@ -212,6 +212,7 @@ async function main() {
   const agentRoom = resolveAgentRoom({
     requestedAlias: requestedSession,
     explicitAgentId: arg("agent-id") || process.env.CHATGPT_AGENT_ID || "",
+    explicitTaskId: arg("task-id") || "",
     sharedRoom: flag("shared-room") || boolEnv("CHATGPT_SHARED_ROOM"),
     taskTitle: arg("task-title") || process.env.CHATGPT_TASK_TITLE || promptInput.prompt,
   });
@@ -290,8 +291,11 @@ async function main() {
       threadMode,
       aliasBound: threadPolicy.aliasBound,
       conversationUrl: conversationUrl || null,
-      agentScoped: agentRoom.scoped,
+      scope: agentRoom.scope,
+      agentScoped: agentRoom.agentScoped,
+      taskScoped: agentRoom.taskScoped,
       agent: agentRoom.agent,
+      task: agentRoom.task,
       taskTitle: agentRoom.taskTitle,
       roomLabel: agentRoom.roomLabel || null,
     },

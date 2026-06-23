@@ -47,7 +47,9 @@ const requestedSession = arg("session") || arg("alias") || process.env.CHATGPT_S
 const agentRoom = resolveAgentRoom({
   requestedAlias: requestedSession,
   explicitAgentId: arg("agent-id") || process.env.CHATGPT_AGENT_ID || "",
+  explicitTaskId: arg("task-id") || "",
   sharedRoom: flag("shared-room") || /^(1|true|yes)$/i.test(process.env.CHATGPT_SHARED_ROOM || ""),
+  taskTitle: arg("task-title") || process.env.CHATGPT_TASK_TITLE || "",
 });
 const session = agentRoom.effectiveAlias;
 const responseTimeoutMs = Number(process.env.CHATGPT_RESPONSE_TIMEOUT_MS || 480_000);
@@ -75,8 +77,13 @@ const receipt = {
   room: {
     alias: session || null,
     requestedAlias: agentRoom.requestedAlias || null,
-    agentScoped: agentRoom.scoped,
+    scope: agentRoom.scope,
+    agentScoped: agentRoom.agentScoped,
+    taskScoped: agentRoom.taskScoped,
     agent: agentRoom.agent,
+    task: agentRoom.task,
+    taskTitle: agentRoom.taskTitle,
+    roomLabel: agentRoom.roomLabel || null,
   },
   project,
   startedAt: new Date().toISOString(),
