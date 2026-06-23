@@ -106,6 +106,10 @@ by Project URL. A later call with the same file content in the same scope must
 skip the upload and report it in `receipt.upload.skipped`; a changed file must
 stage under a filename containing the new content hash. Duplicate-file modals
 are treated as exception cleanup, not as normal control flow.
+At call start, after the wrapper confirms there is no active ChatGPT generation,
+it may dismiss stale duplicate-upload modals and remove stale composer
+attachments left by an older failed run. This cleanup must never stop, reload,
+retry, or type over an active run.
 
 ## Session Rooms
 
@@ -122,10 +126,12 @@ independent tasks, or health checks. Aliases are repo-owned. `main` means
 named `main`.
 
 ChatGPT UI Projects are explicit browser targets, not the same thing as local
-repo project ids. When `--project-url` or `CHATGPT_PROJECT_URL` is set with an
-alias, the daily default is to open a new conversation inside that ChatGPT
-Project and bind the alias to the new thread. Reuse the previous bound room only
-with `--reuse-room` / `--continue-room` or `CHATGPT_REUSE_ROOM=1`.
+repo project ids. Project URL priority is explicit `--project-url`, then
+`CHATGPT_PROJECT_URL`, then repo-local git config `chatgpt-pro.projectUrl`.
+When a Project URL is available with an alias, the daily default is to open a
+new conversation inside that ChatGPT Project and bind the alias to the new
+thread. Reuse the previous bound room only with `--reuse-room` /
+`--continue-room` or `CHATGPT_REUSE_ROOM=1`.
 
 Room lifecycle commands:
 

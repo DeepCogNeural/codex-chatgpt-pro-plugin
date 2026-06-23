@@ -15,6 +15,7 @@ import {
   runDir as makeRunDir,
   runId as makeRunId,
 } from "../src/runtime-config.mjs";
+import { configuredChatGptProjectUrl } from "../src/git-config.mjs";
 
 function arg(name) {
   const prefix = `--${name}=`;
@@ -42,7 +43,11 @@ function fail(errorCode, message, details = {}) {
 
 const command = process.argv[2] || "upload";
 const port = Number(process.env.CHROME_REMOTE_DEBUGGING_PORT || DEFAULT_CDP_PORT);
-const projectUrl = arg("project-url") || arg("chatgpt-project-url") || process.env.CHATGPT_PROJECT_URL || "";
+const projectUrl = arg("project-url")
+  || arg("chatgpt-project-url")
+  || process.env.CHATGPT_PROJECT_URL
+  || configuredChatGptProjectUrl()
+  || "";
 const sourceFiles = [
   ...args("source-file"),
   ...args("upload-file"),
@@ -85,7 +90,10 @@ try {
     fail("project_source.command_unsupported", "Supported commands: upload, create.", { command });
   }
   if (!projectUrl) {
-    fail("project_source.project_url_required", "Project source upload requires --project-url=<ChatGPT Project URL> or CHATGPT_PROJECT_URL.");
+    fail(
+      "project_source.project_url_required",
+      "Project source upload requires --project-url=<ChatGPT Project URL>, CHATGPT_PROJECT_URL, or repo-local git config chatgpt-pro.projectUrl.",
+    );
   }
   if (!sourceFiles.length) {
     fail("project_source.files_required", "Provide at least one --source-file=<path>.");

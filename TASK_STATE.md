@@ -84,7 +84,7 @@ Stop ChatGPT duplicate-file modals from disrupting agent calls.
 
 - Added a local upload ledger at `.devspace/state/chatgpt-upload-ledger.json`.
 - Upload ledger scope:
-  - normal message attachments: ChatGPT Project URL when present, otherwise conversation URL or alias.
+  - normal message attachments: actual ChatGPT `/c/...` conversation URL only.
   - Project source uploads: ChatGPT Project URL.
 - Same content hash in the same scope is skipped and reported in `receipt.upload.skipped`.
 - Changed content gets a staged filename with the new content hash, so ChatGPT sees a new version.
@@ -101,3 +101,41 @@ Stop ChatGPT duplicate-file modals from disrupting agent calls.
 - `npm run test:deterministic`: passed.
 - `git diff --check`: passed.
 - Independent reviewer recheck returned `PASS`.
+
+## 2026-06-23 Project Default + Stale Modal Follow-Up
+
+### Goal
+
+Make daily agent calls stop depending on every caller remembering the ChatGPT Project URL, and prevent old duplicate-upload modals from blocking later calls.
+
+### Root Cause Evidence
+
+- A recent failed run under `/Users/linghao/Github/Polymarket-OB-LP/.devspace/runs/2026-06-23T18-08-18-499Z-chatgpt-call/receipt.json` targeted `https://chatgpt.com/` with `chatGptProject.url: null`; that caller did not use the Project.
+- The visible duplicate-upload modals were tied to older Project tabs from `17:09` and `17:15` timeout runs. Their staged filenames were timestamp-only, from before the hash/ledger patch.
+- Current installed plugin cache already had the upload ledger/hash patch, so the screenshot is stale browser state plus one caller misuse, not direct evidence that the new dedupe code failed.
+
+### Fix
+
+- Added repo-local default Project URL support through git config `chatgpt-pro.projectUrl`.
+- Project URL priority is now explicit `--project-url`, then `CHATGPT_PROJECT_URL`, then repo-local `chatgpt-pro.projectUrl`.
+- Applied that default to `chatgpt-pro call`, `chatgpt-pro read`, and `chatgpt-pro project-source upload`.
+- Added call-start stale upload UI cleanup after active-run wait: dismiss duplicate-upload modal and remove stale composer attachments before selecting model/uploading/typing.
+- Updated README, skill docs, and call contract so future agents do not have to infer the Project URL or duplicate-upload behavior.
+
+### Verification
+
+- `npm run test:call-policy`: passed.
+- `npm run test:upload-metadata`: passed.
+- `npm run test:project-source-gate`: passed.
+- `npm run test:non-interference`: passed.
+- `npm run plugin:sync`: passed.
+- First `npm run test:deterministic` failed at `test:package-surface` because `.codex/skills/chatgpt-pro-line/SKILL.md` was stale relative to `skills/chatgpt-pro-line/SKILL.md`.
+- Synchronized the source repo `.codex` skill mirror.
+- Re-ran `npm run test:deterministic`: passed.
+- `git diff --check`: passed.
+- `node --check scripts/chatgpt-call.mjs scripts/chatgpt-read-current.mjs scripts/chatgpt-project-source.mjs src/chatgpt-upload.mjs src/git-config.mjs`: passed.
+- Refreshed installed Codex plugin cache with `/Users/linghao/.local/bin/codex --enable plugins plugin add codex-chatgpt-pro-plugin@codex-chatgpt-pro-plugin`.
+- Verified installed cache contains `chatgpt-pro.projectUrl`, `cleanupStaleUploadUi`, and the updated skill docs.
+- Set `/Users/linghao/Github/Polymarket-OB-LP` repo-local git config `chatgpt-pro.projectUrl=https://chatgpt.com/g/g-p-6a35e91256988191b967fe33344b0f04-polymarket-lp`.
+- Verified `configuredChatGptProjectUrl()` resolves that Polymarket Project URL when `CHATGPT_REPO_ROOT=/Users/linghao/Github/Polymarket-OB-LP`.
+- Cleared two stale duplicate-upload modals in existing ChatGPT Project tabs after confirming no active run; follow-up scan found no remaining duplicate-upload modal targets.

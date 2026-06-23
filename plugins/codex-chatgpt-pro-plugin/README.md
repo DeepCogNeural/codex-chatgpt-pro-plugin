@@ -84,11 +84,14 @@ in the visible window and rerun `chatgpt-pro doctor --live`.
 # First call into this repo's main room
 chatgpt-pro call --alias=main --confirm-repo-context-upload --prompt="Review this repo's architecture and name the biggest risk."
 
-# Daily advisor flow: use a ChatGPT Project, but start a new conversation there by default
-chatgpt-pro call --alias=polymarket-lp --project-url=https://chatgpt.com/g/... --prompt-file=advisor.md
+# Configure this repo once so agents do not need to remember the Project URL
+git config --local chatgpt-pro.projectUrl https://chatgpt.com/g/...
+
+# Daily advisor flow: uses the configured ChatGPT Project and starts a new conversation there by default
+chatgpt-pro call --alias=polymarket-lp --prompt-file=advisor.md
 
 # Explicitly reuse the previous bound room only when continuity is intended
-chatgpt-pro call --alias=polymarket-lp --project-url=https://chatgpt.com/g/... --reuse-room --prompt-file=follow-up.md
+chatgpt-pro call --alias=polymarket-lp --reuse-room --prompt-file=follow-up.md
 
 # Inspect repo room / lock / cache state without touching the browser
 chatgpt-pro status --alias=main
@@ -121,10 +124,11 @@ reload, retry, resend, or type over the active run.
 中文硬规则：ChatGPT 思考、读文档、收尾时绝不打断；必须等它输出完成，并要求末尾明确写
 `输出完毕`，Codex 看到这个 marker 后才继续。
 
-When `--project-url` / `CHATGPT_PROJECT_URL` is set with an alias, `call`
-opens a new conversation inside that ChatGPT Project and binds the alias to the
-new thread by default. Use `--reuse-room` only when you deliberately want the
-previous bound conversation.
+Project URL priority is explicit `--project-url`, then `CHATGPT_PROJECT_URL`,
+then the repo-local git config `chatgpt-pro.projectUrl`. When a Project URL is
+available with an alias, `call` opens a new conversation inside that ChatGPT
+Project and binds the alias to the new thread by default. Use `--reuse-room`
+only when you deliberately want the previous bound conversation.
 
 Generated `repo-context.md` is secret-scanned and requires
 `--confirm-repo-context-upload` or
@@ -141,12 +145,14 @@ scope, the next call skips the upload instead of triggering ChatGPT's
 duplicate-file modal. If the file content changes, the staged upload filename
 includes the new content hash, so ChatGPT sees a new version. Agents should not
 solve duplicate modals by retrying, reloading, or interrupting a running answer.
+At call start, after confirming ChatGPT is not actively generating, the wrapper
+also dismisses stale duplicate-upload modals and removes stale composer
+attachments left by older failed runs.
 
 Project source/knowledge upload is separate from ordinary message attachment:
 
 ```bash
 chatgpt-pro project-source upload \
-  --project-url=https://chatgpt.com/g/... \
   --source-file=.devspace/context/current/repo-context.md \
   --confirm-project-source-upload
 ```

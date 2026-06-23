@@ -54,6 +54,25 @@ assert.equal(
   resolveChatGptProjectTarget({ env: { CHATGPT_PROJECT_URL: "https://chatgpt.com/g/project-1" } }),
   "https://chatgpt.com/g/project-1",
 );
+assert.equal(
+  resolveChatGptProjectTarget({ configuredProjectUrl: "https://chatgpt.com/g/repo-default", env: {} }),
+  "https://chatgpt.com/g/repo-default",
+);
+assert.equal(
+  resolveChatGptProjectTarget({
+    explicitProjectUrl: "https://chatgpt.com/g/explicit",
+    configuredProjectUrl: "https://chatgpt.com/g/repo-default",
+    env: { CHATGPT_PROJECT_URL: "https://chatgpt.com/g/env" },
+  }),
+  "https://chatgpt.com/g/explicit",
+);
+assert.equal(
+  resolveChatGptProjectTarget({
+    configuredProjectUrl: "https://chatgpt.com/g/repo-default",
+    env: { CHATGPT_PROJECT_URL: "https://chatgpt.com/g/env" },
+  }),
+  "https://chatgpt.com/g/env",
+);
 
 const projectDefault = resolveThreadPolicy({
   session: "polymarket-lp",

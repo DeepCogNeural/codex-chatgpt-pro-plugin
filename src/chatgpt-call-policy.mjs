@@ -96,9 +96,10 @@ export function resolveLevelRequest({
 
 export function resolveChatGptProjectTarget({
   explicitProjectUrl = "",
+  configuredProjectUrl = "",
   env = process.env,
 } = {}) {
-  return explicitProjectUrl || env.CHATGPT_PROJECT_URL || "";
+  return explicitProjectUrl || env.CHATGPT_PROJECT_URL || configuredProjectUrl || "";
 }
 
 export function resolveThreadPolicy({
