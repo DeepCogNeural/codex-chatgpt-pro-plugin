@@ -81,6 +81,16 @@ binding, latest receipt/transcript paths, browser/profile lock owner if busy,
 project-state lock owner if busy, and model-cache state. It must remain safe to
 run while another agent holds the live browser lock.
 
+If ChatGPT shows the duplicate-upload modal, use the safe cleanup command:
+
+```bash
+chatgpt-pro cleanup duplicate-upload
+```
+
+This command only dismisses the duplicate-upload OK modal. If ChatGPT is still
+thinking, it does not stop, reload, resend, type over the prompt, or clear
+attachments.
+
 By default, `chatgpt-pro call` selects the strongest available Pro reasoning
 label by preference: `Pro Extended`, then `Pro`. Use `--level=...` /
 `--intelligence=...` or `CHATGPT_LEVEL` to choose another live label. Use
@@ -287,6 +297,8 @@ includes the new content hash. At call start, after confirming ChatGPT is not
 actively generating, the wrapper also dismisses stale duplicate-upload modals
 and removes stale composer attachments left by older failed runs. Do not retry,
 reload, or interrupt ChatGPT to handle duplicate file modals.
+If the modal appears outside a normal `call`, run
+`chatgpt-pro cleanup duplicate-upload`.
 
 For human-driven ChatGPT threads, bind the thread URL to a repo alias and export
 visible history before asking Codex to continue from it. Prefer `rooms rebind`

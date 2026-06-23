@@ -129,7 +129,7 @@ async function fileInputNodeId(cdp) {
   throw uploadError("input.attachment_input_missing", "No ChatGPT file input was found.", { selectors });
 }
 
-async function dismissUploadDialog(cdp) {
+export async function dismissDuplicateUploadDialog(cdp) {
   return evaluate(
     cdp,
     `(() => {
@@ -160,7 +160,7 @@ async function removeComposerAttachments(cdp) {
 
 export async function cleanupStaleUploadUi(cdp) {
   await cdp.send("DOM.enable").catch(() => {});
-  const dismissedDialog = await dismissUploadDialog(cdp);
+  const dismissedDialog = await dismissDuplicateUploadDialog(cdp);
   const removedExisting = await removeComposerAttachments(cdp);
   if (dismissedDialog.dismissed || removedExisting.removed) await sleep(750);
   return {

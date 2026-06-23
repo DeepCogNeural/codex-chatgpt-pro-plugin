@@ -79,6 +79,7 @@ try {
     for (const args of [
       ["call", "--alias=main", "--no-wait", "--no-repo-context", "--prompt=fixture"],
       ["read", "--alias=main", "--no-wait"],
+      ["cleanup", "duplicate-upload", "--no-wait"],
       ["history", "export", "--alias=main", "--no-wait"],
       ["rooms", "new", "--alias=critic", "--no-wait"],
       ["rooms", "rebind", "--alias=main", "--conversation-url=https://chatgpt.com/c/fixture-main", "--no-wait"],
@@ -99,6 +100,8 @@ try {
           ? "read"
           : args[0] === "call"
             ? "call"
+            : args[0] === "cleanup"
+              ? "cleanup.duplicate-upload"
             : args[0] === "history"
               ? "history.export"
               : `rooms.${args[1]}`);

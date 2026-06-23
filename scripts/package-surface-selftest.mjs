@@ -10,6 +10,7 @@ const help = spawnSync(process.execPath, [resolve("bin/chatgpt-pro"), "help"], {
 assert.equal(help.status, 0, help.stderr || help.stdout);
 assert.match(help.stdout, /doctor\s+Warm or verify/);
 assert.match(help.stdout, /status\s+Show repo room/);
+assert.match(help.stdout, /cleanup duplicate-upload\s+Dismiss duplicate-upload/);
 assert.match(help.stdout, /rooms <command>/);
 assert.doesNotMatch(help.stdout, /sessions <command>/);
 assert.match(help.stdout, /Repo room lifecycle commands/);
@@ -23,6 +24,7 @@ assert.match(skill, /chatgpt-pro call --alias=main/);
 assert.match(skill, /chatgpt-pro rooms new --alias=critic/);
 assert.match(skill, /chatgpt-pro rooms rebind --alias=spec/);
 assert.match(skill, /chatgpt-pro rooms repair --alias=main/);
+assert.match(skill, /chatgpt-pro cleanup duplicate-upload/);
 assert.equal(pluginSkill, skill);
 
 const readme = readFileSync("README.md", "utf8");
@@ -30,6 +32,7 @@ assert.match(readme, /chatgpt-pro doctor/);
 assert.match(readme, /chatgpt-pro status --alias=main/);
 assert.match(readme, /chatgpt-pro rooms rebind --alias=spec/);
 assert.match(readme, /chatgpt-pro rooms repair --alias=main/);
+assert.match(readme, /chatgpt-pro cleanup duplicate-upload/);
 assert.match(readme, /npm run test:v1/);
 assert.match(readme, /npm run test:live/);
 assert.match(readme, /`npm test`: runs deterministic tests only/);
