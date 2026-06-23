@@ -66,9 +66,29 @@ waits, reads, records the transcript, then continues. Event/interrupt mode is
 reserved for a later API where send can return a run id and response capture
 can happen separately.
 
-`chatgpt-pro call` defaults to the live `Pro` intelligence level when available.
-Callers may override with `--level`, `--intelligence`, `CHATGPT_LEVEL`, or
-`CHATGPT_INTELLIGENCE`. `--no-default-pro` is only for transport debugging.
+`chatgpt-pro call` defaults to the best available Pro reasoning level. The
+default preference list is `Pro Extended,Pro`: try `Pro Extended` first, then
+fall back to `Pro` if the live UI exposes only that label. Callers may override
+with `--level`, `--intelligence`, `CHATGPT_LEVEL`, or `CHATGPT_INTELLIGENCE`.
+`--no-default-pro` is only for transport debugging.
+
+By default, calls require an explicit completion marker. The wrapper appends an
+instruction requiring ChatGPT to end with a final line that is exactly
+`输出完毕`, and the reader treats the response as incomplete until both facts are
+true:
+
+- the visible ChatGPT run is no longer active
+- the final non-empty assistant line equals `输出完毕`
+
+If the page shows `Pro thinking`, `Reading documents`, `Finalizing answer`, or
+any Stop/Cancel/Interrupt control, Codex must wait or fail closed. It must not
+click stop, reload, retry, resend, clear the composer, type another prompt, or
+infer completion from a stale wrapper read. `--no-completion-marker` and
+`CHATGPT_REQUIRE_COMPLETION_MARKER=0` are transport-debugging escapes, not the
+daily workflow.
+
+Chinese hard rule for daily agents: ChatGPT 思考、读文档、收尾时绝不打断；必须等它输出完成，
+并要求末尾明确写 `输出完毕`，Codex 看到这个 marker 后才继续。
 
 The canonical call path must not use OS-level mouse or keyboard automation. For
 message insertion it should use DOM focus, CDP `Input.insertText`, and a DOM
@@ -87,9 +107,15 @@ Treat ChatGPT conversations as rooms:
 - `scratch`: disposable prompt/context checks
 
 Use an existing alias when continuity matters. Use a new chat for clean critique,
-independent tasks, or health checks. Do not create one tab per call by default.
-Aliases are repo-owned. `main` means `main` for the current project, not any
-tab or conversation globally named `main`.
+independent tasks, or health checks. Aliases are repo-owned. `main` means
+`main` for the current local repo project, not any tab or conversation globally
+named `main`.
+
+ChatGPT UI Projects are explicit browser targets, not the same thing as local
+repo project ids. When `--project-url` or `CHATGPT_PROJECT_URL` is set with an
+alias, the daily default is to open a new conversation inside that ChatGPT
+Project and bind the alias to the new thread. Reuse the previous bound room only
+with `--reuse-room` / `--continue-room` or `CHATGPT_REUSE_ROOM=1`.
 
 Room lifecycle commands:
 
@@ -118,6 +144,20 @@ chatgpt-pro call --alias main
 Continue the active repo-owned room.
 
 ```bash
+chatgpt-pro call --alias polymarket-lp --project-url https://chatgpt.com/g/...
+```
+
+Open a new conversation inside that ChatGPT Project and bind `polymarket-lp` to
+the resulting thread. This is the daily advisor/reviewer default for Project
+work.
+
+```bash
+chatgpt-pro call --alias polymarket-lp --project-url https://chatgpt.com/g/... --reuse-room
+```
+
+Reuse the previously bound Project conversation deliberately.
+
+```bash
 chatgpt-pro call --alias critic --fresh
 ```
 
@@ -137,6 +177,24 @@ chatgpt-pro call --alias main --rebind-alias --conversation-url https://chatgpt.
 
 Deliberately point an alias at an already-open conversation and send the prompt.
 Prefer `rooms rebind` when you only need to bind room state.
+
+Project source/knowledge upload is not the same as `--upload-file`. The latter
+attaches files to one message; Project source upload persists files in the
+ChatGPT Project. It is a separate, confirmed command:
+
+```bash
+chatgpt-pro project-source upload \
+  --project-url=https://chatgpt.com/g/... \
+  --source-file=.devspace/context/current/repo-context.md \
+  --confirm-project-source-upload
+```
+
+The command fails before touching the browser unless the Project URL, source
+files, and confirmation flag are present. Creating a new ChatGPT Project is not
+automated yet; the command fails closed and asks for a manually created Project
+URL rather than guessing the current UI. It must not fall back to the ordinary
+ChatGPT message composer file input; if a safe Project source input cannot be
+found, the command fails closed.
 
 If the human pastes a ChatGPT conversation URL and asks Codex to work from that
 thread, bind it deliberately:

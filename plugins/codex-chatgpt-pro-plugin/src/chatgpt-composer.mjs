@@ -6,6 +6,11 @@ import {
   normalizeMessageText,
   snapshotConversationMessages,
 } from "./chatgpt-messages.mjs";
+import {
+  DEFAULT_COMPLETION_MARKER,
+  completionMarkerError,
+  hasCompletionMarker,
+} from "./chatgpt-call-policy.mjs";
 
 export function findExactTokenTurn(turns, token) {
   return turns.find((turn) =>
@@ -383,7 +388,7 @@ export async function waitForTokenOutput(cdp, responseToken, initialAssistantCou
 }
 
 function cleanAssistantText(text) {
-  const progressLine = /^(pro thinking|reading documents|thinking|reasoning|working|show more|show less)$/i;
+  const progressLine = /^(pro thinking|reading documents|finalizing answer|thinking|reasoning|working|show more|show less)$/i;
   return String(text || "")
     .split(/\n+/)
     .map((line) => line.trim())
@@ -393,10 +398,10 @@ function cleanAssistantText(text) {
 }
 
 function isProgressPlaceholder(text) {
-  return !cleanAssistantText(text) && /pro thinking|reading documents|thinking|reasoning|working/i.test(String(text || ""));
+  return !cleanAssistantText(text) && /pro thinking|reading documents|finalizing answer|thinking|reasoning|working/i.test(String(text || ""));
 }
 
-async function generationState(cdp) {
+export async function generationState(cdp) {
   return evaluate(
     cdp,
     `(() => {
@@ -416,13 +421,13 @@ async function generationState(cdp) {
       const statusTexts = [...document.querySelectorAll("div, span, p")]
         .filter(visible)
         .map((el) => (el.innerText || "").trim())
-        .filter((text) => /^(pro thinking|reading documents)$/i.test(text));
+        .filter((text) => /^(pro thinking|reading documents|finalizing answer)$/i.test(text));
       return {
         active: labels.some((label) => /stop answering|stop generating|interrupt|cancel/i.test(label))
-          || labels.some((label) => /^(pro thinking|reading documents)$/i.test(label))
+          || labels.some((label) => /^(pro thinking|reading documents|finalizing answer)$/i.test(label))
           || statusTexts.length > 0,
         labels: [
-          ...labels.filter((label) => /stop|interrupt|cancel|pro thinking|reading documents/i.test(label)),
+          ...labels.filter((label) => /stop|interrupt|cancel|pro thinking|reading documents|finalizing answer/i.test(label)),
           ...statusTexts,
         ],
       };
@@ -430,9 +435,79 @@ async function generationState(cdp) {
   );
 }
 
+export async function assertNoActiveGeneration(cdp, { phase = "before interacting with ChatGPT" } = {}) {
+  const state = await generationState(cdp);
+  if (!state?.active) return state;
+  const error = new Error(`ChatGPT is still generating during ${phase}; refusing to interrupt it.`);
+  error.errorCode = "chatgpt.active_run_in_progress";
+  error.details = {
+    phase,
+    activeLabels: state.labels || [],
+    rule: "Do not stop, reload, retry, resend, clear the composer, or type over an active ChatGPT run.",
+  };
+  throw error;
+}
+
+export async function waitForNoActiveGeneration(cdp, {
+  phase = "before interacting with ChatGPT",
+  timeoutMs = 300_000,
+  stableMs = 2_000,
+  pollMs = 750,
+} = {}) {
+  const startedAt = now();
+  let lastActive = null;
+  let lastStateError = null;
+  let inactiveSince = 0;
+  while (now() - startedAt < timeoutMs) {
+    let state = null;
+    try {
+      state = await generationState(cdp);
+      lastStateError = null;
+    } catch (error) {
+      lastStateError = error;
+      inactiveSince = 0;
+      await sleep(pollMs);
+      continue;
+    }
+    lastActive = state;
+    if (state.active !== false) {
+      inactiveSince = 0;
+      await sleep(pollMs);
+      continue;
+    }
+    if (!inactiveSince) inactiveSince = now();
+    if (now() - inactiveSince >= stableMs) {
+      return {
+        active: false,
+        waitedMs: Math.round(now() - startedAt),
+        phase,
+        lastLabels: state.labels || [],
+      };
+    }
+    await sleep(Math.min(pollMs, stableMs));
+  }
+
+  const error = new Error(`Timed out waiting for ChatGPT to finish during ${phase}; refusing to interrupt it.`);
+  error.errorCode = "chatgpt.active_run_timeout";
+  error.details = {
+    phase,
+    timeoutMs,
+    activeLabels: lastActive?.labels || [],
+    lastStateError: lastStateError ? String(lastStateError?.message || lastStateError) : null,
+    rule: "Wait for active ChatGPT runs to finish. Do not stop, reload, retry, resend, clear, or type over them.",
+  };
+  throw error;
+}
+
+function markerSatisfied(text, { requireCompletionMarker = false, completionMarker = DEFAULT_COMPLETION_MARKER } = {}) {
+  return !requireCompletionMarker || hasCompletionMarker(text, completionMarker);
+}
+
 export async function waitForAssistantResponse(cdp, initialAssistantCount, {
   timeoutMs = 240_000,
   stableMs = 4_000,
+  requireCompletionMarker = false,
+  completionMarker = DEFAULT_COMPLETION_MARKER,
 } = {}) {
   const startedAt = now();
   let lastProbe = null;
@@ -457,6 +532,12 @@ export async function waitForAssistantResponse(cdp, initialAssistantCount, {
       continue;
     }
     if (lastText && generating.active === false && stableFor >= stableMs) {
+      if (!markerSatisfied(lastText, { requireCompletionMarker, completionMarker })) {
+        throw completionMarkerError(lastText, completionMarker, {
+          finishDetectedBy: "stop_button_gone",
+          stableMs: Math.round(stableFor),
+        });
+      }
       return {
         probe,
         assistantText: lastText,
@@ -464,7 +545,12 @@ export async function waitForAssistantResponse(cdp, initialAssistantCount, {
         finishDetectedBy: "stop_button_gone",
       };
     }
-    if (lastText && generating.active === null && stableFor >= stableMs * 2) {
+    if (
+      lastText
+      && generating.active === null
+      && stableFor >= stableMs * 2
+      && markerSatisfied(lastText, { requireCompletionMarker, completionMarker })
+    ) {
       return {
         probe,
         assistantText: lastText,
@@ -484,6 +570,8 @@ export async function waitForAssistantResponse(cdp, initialAssistantCount, {
     observedUserTurnCount: lastProbe?.userTurns?.length ?? null,
     bodyTextLength: lastProbe?.bodyText?.length ?? null,
     partialAssistantTextLength: lastText.length,
+    requireCompletionMarker,
+    completionMarker: requireCompletionMarker ? completionMarker : null,
   };
   throw error;
 }
@@ -491,6 +579,8 @@ export async function waitForAssistantResponse(cdp, initialAssistantCount, {
 export async function waitForAssistantResponseAfterUser(cdp, userMessage, {
   timeoutMs = 240_000,
   stableMs = 4_000,
+  requireCompletionMarker = false,
+  completionMarker = DEFAULT_COMPLETION_MARKER,
 } = {}) {
   const startedAt = now();
   let lastSnapshot = [];
@@ -514,6 +604,13 @@ export async function waitForAssistantResponseAfterUser(cdp, userMessage, {
       continue;
     }
     if (lastText && generating.active === false && stableFor >= stableMs) {
+      if (!markerSatisfied(lastText, { requireCompletionMarker, completionMarker })) {
+        throw completionMarkerError(lastText, completionMarker, {
+          finishDetectedBy: "anchored_stop_button_gone",
+          stableMs: Math.round(stableFor),
+          userOrdinal: userMessage.ordinal,
+        });
+      }
       return {
         probe: await pageProbe(cdp),
         snapshot: lastSnapshot,
@@ -524,7 +621,12 @@ export async function waitForAssistantResponseAfterUser(cdp, userMessage, {
         finishDetectedBy: "anchored_stop_button_gone",
       };
     }
-    if (lastText && generating.active === null && stableFor >= stableMs * 2) {
+    if (
+      lastText
+      && generating.active === null
+      && stableFor >= stableMs * 2
+      && markerSatisfied(lastText, { requireCompletionMarker, completionMarker })
+    ) {
       return {
         probe: await pageProbe(cdp),
         snapshot: lastSnapshot,
@@ -546,6 +648,8 @@ export async function waitForAssistantResponseAfterUser(cdp, userMessage, {
     userOrdinal: userMessage.ordinal,
     observedMessageCount: lastSnapshot.length,
     partialAssistantTextLength: lastText.length,
+    requireCompletionMarker,
+    completionMarker: requireCompletionMarker ? completionMarker : null,
   };
   throw error;
 }

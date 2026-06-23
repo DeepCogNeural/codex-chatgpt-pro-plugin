@@ -15,6 +15,11 @@ import {
   runId as makeRunId,
 } from "../src/runtime-config.mjs";
 import { sealRunEnvelope, threadEchoMode } from "../src/chatgpt/run-envelope.mjs";
+import {
+  completionMarkerFromEnv,
+  completionMarkerRequired,
+  resolveChatGptProjectTarget,
+} from "../src/chatgpt-call-policy.mjs";
 
 function sha256(text) {
   return createHash("sha256").update(text).digest("hex");
@@ -31,10 +36,15 @@ function flag(name) {
 }
 
 const port = Number(process.env.CHROME_REMOTE_DEBUGGING_PORT || DEFAULT_CDP_PORT);
-const targetUrl = process.env.BROWSER_TARGET_URL || DEFAULT_TARGET_URL;
+const chatGptProjectUrl = resolveChatGptProjectTarget({
+  explicitProjectUrl: arg("project-url") || arg("chatgpt-project-url") || "",
+});
+const targetUrl = chatGptProjectUrl || process.env.BROWSER_TARGET_URL || DEFAULT_TARGET_URL;
 const session = arg("session") || arg("alias") || process.env.CHATGPT_SESSION || "";
 const responseTimeoutMs = Number(process.env.CHATGPT_RESPONSE_TIMEOUT_MS || 480_000);
 const stableMs = Number(process.env.CHATGPT_RESPONSE_STABLE_MS || 5_000);
+const completionMarker = completionMarkerFromEnv({ explicitMarker: arg("completion-marker") });
+const requireCompletionMarker = completionMarkerRequired({ disabled: flag("no-completion-marker") });
 const lockTimeoutMs = Number(arg("lock-timeout-ms") || process.env.CHATGPT_LOCK_TIMEOUT_MS || 600_000);
 const noWaitForLock = flag("no-wait");
 const staleLockTtlMs = Number(arg("stale-lock-ttl-ms") || process.env.CHATGPT_STALE_LOCK_TTL_MS || 900_000);
@@ -56,6 +66,10 @@ const receipt = {
   project,
   startedAt: new Date().toISOString(),
   responseTimeoutMs,
+  completion: {
+    required: requireCompletionMarker,
+    marker: requireCompletionMarker ? completionMarker : null,
+  },
 };
 
 try {
@@ -95,6 +109,8 @@ try {
   const response = await waitForAssistantResponse(cdp, Math.max(0, before.assistantTurns.length - 1), {
     timeoutMs: responseTimeoutMs,
     stableMs,
+    requireCompletionMarker,
+    completionMarker,
   });
   assistantText = response.assistantText;
   writeFileSync(resolve(runDir, "assistant.md"), assistantText, { mode: 0o600 });

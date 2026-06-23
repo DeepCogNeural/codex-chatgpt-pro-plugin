@@ -81,10 +81,76 @@ binding, latest receipt/transcript paths, browser/profile lock owner if busy,
 project-state lock owner if busy, and model-cache state. It must remain safe to
 run while another agent holds the live browser lock.
 
-By default, `chatgpt-pro call` selects the live `Pro` intelligence level when
-the website exposes it. Use `--level=...` / `--intelligence=...` or
-`CHATGPT_LEVEL` to choose another live label. Use `--no-default-pro` only for
-transport debugging where changing the selector would obscure the failure.
+By default, `chatgpt-pro call` selects the strongest available Pro reasoning
+label by preference: `Pro Extended`, then `Pro`. Use `--level=...` /
+`--intelligence=...` or `CHATGPT_LEVEL` to choose another live label. Use
+`--no-default-pro` only for transport debugging where changing the selector
+would obscure the failure.
+
+## Non-Interrupt Rule
+
+This rule is mandatory. If ChatGPT is in `Pro thinking`, `Reading documents`,
+`Finalizing answer`, or any equivalent active-run state, do not interrupt it.
+Do not click stop, reload, retry, resend, send a narrower continuation, clear
+the composer, or type a new prompt over the active run. Wrapper errors such as
+`composer.input_mismatch`, `response.possibly_stale`, stale reads, and timeouts
+are not permission to interrupt. Wait for the active run to finish.
+
+Every normal strategy/spec/review prompt must require ChatGPT to end with a
+final line that is exactly:
+
+```text
+输出完毕
+```
+
+The CLI appends this instruction by default and treats the response as
+incomplete until the visible run is finished and the final non-empty assistant
+line equals `输出完毕`. `--no-completion-marker` and
+`CHATGPT_REQUIRE_COMPLETION_MARKER=0` are only for transport debugging, not for
+daily use.
+
+中文硬规则：ChatGPT 思考、读文档、收尾时绝不打断；必须等它输出完成，并要求末尾明确写
+`输出完毕`，Codex 看到这个 marker 后才继续。
+
+## ChatGPT Project Workflow
+
+Local repo project ids and ChatGPT UI Projects are different concepts. For a
+ChatGPT UI Project such as `Polymarket LP`, pass its Project URL explicitly:
+
+```bash
+chatgpt-pro call \
+  --alias=polymarket-lp \
+  --project-url=https://chatgpt.com/g/... \
+  --prompt-file=prompt.md
+```
+
+When `--project-url` / `CHATGPT_PROJECT_URL` is set with an alias, the daily
+default is to open a new conversation inside that ChatGPT Project and bind the
+alias to that new thread. Reuse an older bound conversation only when the user
+explicitly asks for continuity:
+
+```bash
+chatgpt-pro call \
+  --alias=polymarket-lp \
+  --project-url=https://chatgpt.com/g/... \
+  --reuse-room \
+  --prompt-file=follow-up.md
+```
+
+Project source/knowledge upload is separate from a normal message attachment:
+
+```bash
+chatgpt-pro project-source upload \
+  --project-url=https://chatgpt.com/g/... \
+  --source-file=.devspace/context/current/repo-context.md \
+  --confirm-project-source-upload
+```
+
+The source upload command is fail-closed: it requires a Project URL, source
+files, and explicit confirmation before touching the browser. Creating a new
+ChatGPT Project is not automated yet; create it once in ChatGPT and pass the
+Project URL. It must not fall back to the ordinary message composer file input;
+if a safe Project source input cannot be found, it fails closed.
 
 ## Required Live Thread Output
 
