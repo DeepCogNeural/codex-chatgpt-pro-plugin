@@ -20,6 +20,7 @@ import { composeContextEnvelope } from "../src/context-envelope.mjs";
 import { buildRepoContextBundle } from "../src/repo-context-bundle.mjs";
 import { decideRepoContextMode } from "../src/repo-context-policy.mjs";
 import {
+  cleanupStaleUploadUi,
   defaultUploadLedgerPath,
   messageUploadScopeKey,
   recordUploadedFiles,
@@ -63,6 +64,7 @@ import {
   resolveLevelRequest,
   resolveThreadPolicy,
 } from "../src/chatgpt-call-policy.mjs";
+import { configuredChatGptProjectUrl } from "../src/git-config.mjs";
 
 function arg(name) {
   const prefix = `--${name}=`;
@@ -201,6 +203,7 @@ async function step(receipt, name, fn) {
 async function main() {
   const chatGptProjectUrl = resolveChatGptProjectTarget({
     explicitProjectUrl: arg("project-url") || arg("chatgpt-project-url") || "",
+    configuredProjectUrl: configuredChatGptProjectUrl(),
   });
   const targetUrl = chatGptProjectUrl || process.env.BROWSER_TARGET_URL || DEFAULT_TARGET_URL;
   const session = arg("session") || arg("alias") || process.env.CHATGPT_SESSION || "";
@@ -448,6 +451,9 @@ async function main() {
         phase: "before reading or changing ChatGPT choices",
         timeoutMs: responseTimeoutMs,
       }),
+    );
+    receipt.staleUploadCleanup = await step(receipt, "cleanup-stale-upload-ui", () =>
+      cleanupStaleUploadUi(cdp),
     );
 
     runState.update("reading-choices");

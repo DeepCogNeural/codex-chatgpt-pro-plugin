@@ -20,6 +20,7 @@ import {
   completionMarkerRequired,
   resolveChatGptProjectTarget,
 } from "../src/chatgpt-call-policy.mjs";
+import { configuredChatGptProjectUrl } from "../src/git-config.mjs";
 
 function sha256(text) {
   return createHash("sha256").update(text).digest("hex");
@@ -38,6 +39,7 @@ function flag(name) {
 const port = Number(process.env.CHROME_REMOTE_DEBUGGING_PORT || DEFAULT_CDP_PORT);
 const chatGptProjectUrl = resolveChatGptProjectTarget({
   explicitProjectUrl: arg("project-url") || arg("chatgpt-project-url") || "",
+  configuredProjectUrl: configuredChatGptProjectUrl(),
 });
 const targetUrl = chatGptProjectUrl || process.env.BROWSER_TARGET_URL || DEFAULT_TARGET_URL;
 const session = arg("session") || arg("alias") || process.env.CHATGPT_SESSION || "";

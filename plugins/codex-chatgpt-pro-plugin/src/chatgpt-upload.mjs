@@ -158,6 +158,17 @@ async function removeComposerAttachments(cdp) {
   ).catch(() => ({ removed: 0 }));
 }
 
+export async function cleanupStaleUploadUi(cdp) {
+  await cdp.send("DOM.enable").catch(() => {});
+  const dismissedDialog = await dismissUploadDialog(cdp);
+  const removedExisting = await removeComposerAttachments(cdp);
+  if (dismissedDialog.dismissed || removedExisting.removed) await sleep(750);
+  return {
+    dismissedDialog,
+    removedExisting,
+  };
+}
+
 export function describeUploadFiles(paths) {
   return paths.map((path) => {
     const absolutePath = resolve(path);
@@ -391,10 +402,7 @@ export async function uploadFiles(cdp, paths, {
     };
   }
 
-  await cdp.send("DOM.enable").catch(() => {});
-  const dismissedDialog = await dismissUploadDialog(cdp);
-  const removedExisting = await removeComposerAttachments(cdp);
-  if (dismissedDialog.dismissed || removedExisting.removed) await sleep(750);
+  const cleanup = await cleanupStaleUploadUi(cdp);
   const input = await fileInputNodeId(cdp);
   await cdp.send("DOM.setFileInputFiles", {
     nodeId: input.nodeId,
@@ -427,10 +435,7 @@ export async function uploadFiles(cdp, paths, {
     inputSelector: input.selector,
     files,
     skipped: prepared.skipped,
-    cleanup: {
-      dismissedDialog,
-      removedExisting,
-    },
+    cleanup,
     evidence,
     ledger: {
       path: prepared.ledgerPath,

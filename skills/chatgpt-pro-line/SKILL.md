@@ -115,24 +115,30 @@ daily use.
 ## ChatGPT Project Workflow
 
 Local repo project ids and ChatGPT UI Projects are different concepts. For a
-ChatGPT UI Project such as `Polymarket LP`, pass its Project URL explicitly:
+ChatGPT UI Project such as `Polymarket LP`, configure its Project URL once in
+the repo so daily agents do not have to remember it:
+
+```bash
+git config --local chatgpt-pro.projectUrl https://chatgpt.com/g/...
+```
+
+After that, a normal call can omit `--project-url`:
 
 ```bash
 chatgpt-pro call \
   --alias=polymarket-lp \
-  --project-url=https://chatgpt.com/g/... \
   --prompt-file=prompt.md
 ```
 
-When `--project-url` / `CHATGPT_PROJECT_URL` is set with an alias, the daily
-default is to open a new conversation inside that ChatGPT Project and bind the
-alias to that new thread. Reuse an older bound conversation only when the user
-explicitly asks for continuity:
+Project URL priority is explicit `--project-url`, then `CHATGPT_PROJECT_URL`,
+then repo-local git config `chatgpt-pro.projectUrl`. When a Project URL is
+available with an alias, the daily default is to open a new conversation inside
+that ChatGPT Project and bind the alias to that new thread. Reuse an older
+bound conversation only when the user explicitly asks for continuity:
 
 ```bash
 chatgpt-pro call \
   --alias=polymarket-lp \
-  --project-url=https://chatgpt.com/g/... \
   --reuse-room \
   --prompt-file=follow-up.md
 ```
@@ -141,16 +147,17 @@ Project source/knowledge upload is separate from a normal message attachment:
 
 ```bash
 chatgpt-pro project-source upload \
-  --project-url=https://chatgpt.com/g/... \
   --source-file=.devspace/context/current/repo-context.md \
   --confirm-project-source-upload
 ```
 
 The source upload command is fail-closed: it requires a Project URL, source
-files, and explicit confirmation before touching the browser. Creating a new
-ChatGPT Project is not automated yet; create it once in ChatGPT and pass the
-Project URL. It must not fall back to the ordinary message composer file input;
-if a safe Project source input cannot be found, it fails closed.
+files, and explicit confirmation before touching the browser. The Project URL
+can come from `--project-url`, `CHATGPT_PROJECT_URL`, or repo-local
+`chatgpt-pro.projectUrl`. Creating a new ChatGPT Project is not automated yet;
+create it once in ChatGPT and configure or pass the Project URL. It must not
+fall back to the ordinary message composer file input; if a safe Project source
+input cannot be found, it fails closed.
 
 ## Required Live Thread Output
 
@@ -276,8 +283,10 @@ conversations upload normally and are recorded only after the sent user message
 is verified. Project source uploads are scoped by Project URL. If the same
 content was already uploaded in that scope, the next call skips the upload and
 reports `receipt.upload.skipped`; if content changed, the staged filename
-includes the new content hash. Do not retry, reload, or interrupt ChatGPT to
-handle duplicate file modals.
+includes the new content hash. At call start, after confirming ChatGPT is not
+actively generating, the wrapper also dismisses stale duplicate-upload modals
+and removes stale composer attachments left by older failed runs. Do not retry,
+reload, or interrupt ChatGPT to handle duplicate file modals.
 
 For human-driven ChatGPT threads, bind the thread URL to a repo alias and export
 visible history before asking Codex to continue from it. Prefer `rooms rebind`
