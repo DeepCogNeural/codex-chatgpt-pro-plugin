@@ -47,14 +47,15 @@ Do not hardcode model/intelligence labels — read them from the live site:
 
 ```bash
 npm run levels:list
-npm run levels:set -- --level=Pro
+npm run levels:set -- --level="Pro Extended"
 npm run choices:set -- --model=5.4
 ```
 
 Receipts record the account plan, available choices, and the selected/current
 choice. Treat `account.isPro` as subscription detection and
-`intelligence.current` as the active level. Slower levels such as `High` or
-`Pro` may need a larger `CHATGPT_RESPONSE_TIMEOUT_MS`.
+`intelligence.current` as the active level. Slower levels such as
+`Pro Extended`, `High`, or `Pro` may need a larger
+`CHATGPT_RESPONSE_TIMEOUT_MS`.
 
 ## Run artifacts
 

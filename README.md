@@ -84,6 +84,12 @@ in the visible window and rerun `chatgpt-pro doctor --live`.
 # First call into this repo's main room
 chatgpt-pro call --alias=main --confirm-repo-context-upload --prompt="Review this repo's architecture and name the biggest risk."
 
+# Daily advisor flow: use a ChatGPT Project, but start a new conversation there by default
+chatgpt-pro call --alias=polymarket-lp --project-url=https://chatgpt.com/g/... --prompt-file=advisor.md
+
+# Explicitly reuse the previous bound room only when continuity is intended
+chatgpt-pro call --alias=polymarket-lp --project-url=https://chatgpt.com/g/... --reuse-room --prompt-file=follow-up.md
+
 # Inspect repo room / lock / cache state without touching the browser
 chatgpt-pro status --alias=main
 
@@ -103,12 +109,42 @@ Room lifecycle commands (`rooms new`, `rooms rebind`, `rooms repair`, and
 `rooms list/show`) are repo-scoped, so the same alias can exist safely in
 different repositories.
 
-By default, `call` selects the live **Pro** intelligence level and detects when a
-generated `repo-context.md` would help. Generated repo context is secret-scanned
-and requires `--confirm-repo-context-upload` or
+By default, `call` asks for the best available Pro reasoning level, preferring
+`Pro Extended` and falling back to `Pro` when the live UI exposes only that
+label. It also appends a hard completion instruction: ChatGPT must end with a
+final line that is exactly `输出完毕`. Codex treats the call as incomplete until
+the active run is finished and that marker is present. If the page is still
+showing `Pro thinking`, `Reading documents`, `Finalizing answer`, or any
+Stop/Cancel/Interrupt control, the CLI waits or fails closed; it must not stop,
+reload, retry, resend, or type over the active run.
+
+中文硬规则：ChatGPT 思考、读文档、收尾时绝不打断；必须等它输出完成，并要求末尾明确写
+`输出完毕`，Codex 看到这个 marker 后才继续。
+
+When `--project-url` / `CHATGPT_PROJECT_URL` is set with an alias, `call`
+opens a new conversation inside that ChatGPT Project and binds the alias to the
+new thread by default. Use `--reuse-room` only when you deliberately want the
+previous bound conversation.
+
+Generated `repo-context.md` is secret-scanned and requires
+`--confirm-repo-context-upload` or
 `CHATGPT_CONFIRM_REPO_CONTEXT_UPLOAD=1` before it can be uploaded or inlined.
 Use `--repo-context=off` / `--no-repo-context` or pass explicit scrubbed
 `--upload-file` artifacts for narrower calls.
+
+Project source/knowledge upload is separate from ordinary message attachment:
+
+```bash
+chatgpt-pro project-source upload \
+  --project-url=https://chatgpt.com/g/... \
+  --source-file=.devspace/context/current/repo-context.md \
+  --confirm-project-source-upload
+```
+
+Creating a new ChatGPT Project is intentionally fail-closed until the live UI
+flow is stable; create the Project once, then pass its URL. The uploader must
+not fall back to the ordinary ChatGPT message composer file input; if it cannot
+find a safe Project source input, it fails closed.
 
 ## How it works
 
@@ -176,15 +212,19 @@ CLI. Inside this source repo the same behavior is available via `npm run`:
 | `npm run rooms:list` | List repo-owned rooms (no CDP) |
 | `npm run context:bundle -- --name=focused` | Build the repo-context monofile |
 | `npm run chatgpt:call -- --alias=main --message-file=prompt.md` | Source-repo alias for `chatgpt-pro call` |
+| `./bin/chatgpt-pro project-source upload --project-url=... --source-file=... --confirm-project-source-upload` | Upload explicit files to ChatGPT Project source/knowledge |
 | `npm run history:export -- --alias=spec --last=20` | Export visible history |
 | `npm run plugin:sync` | Refresh the materialized install bundle |
 
 Common runtime switches: `BROWSER_POSTURE=headed|headless`,
-`CHATGPT_DEFAULT_LEVEL` (default `Pro`), `CHATGPT_RESPONSE_TIMEOUT_MS`
-(default `240000`), `CHATGPT_REPO_CONTEXT_MODE=auto|upload|inline|off`,
-`CHATGPT_CONFIRM_REPO_CONTEXT_UPLOAD=1`, `CHATGPT_LOCK_TIMEOUT_MS` (default
-`600000`), `BROWSER_OBSERVER=1` (print a run-inspector URL). See the contract
-docs for the full list.
+`CHATGPT_DEFAULT_LEVEL` (default `Pro Extended,Pro`),
+`CHATGPT_COMPLETION_MARKER` (default `输出完毕`),
+`CHATGPT_REQUIRE_COMPLETION_MARKER=0` only for transport debugging,
+`CHATGPT_PROJECT_URL`, `CHATGPT_RESPONSE_TIMEOUT_MS` (default `240000`),
+`CHATGPT_REPO_CONTEXT_MODE=auto|upload|inline|off`,
+`CHATGPT_CONFIRM_REPO_CONTEXT_UPLOAD=1`, `CHATGPT_LOCK_TIMEOUT_MS`
+(default `600000`), `BROWSER_OBSERVER=1` (print a run-inspector URL). See the
+contract docs for the full list.
 
 ## Tests
 

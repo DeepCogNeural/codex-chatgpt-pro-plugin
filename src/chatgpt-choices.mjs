@@ -17,6 +17,14 @@ function matchChoice(items, requested) {
     || items.find((item) => normalize(item.label).startsWith(needle));
 }
 
+function matchChoicePreference(items, requestedLevels = []) {
+  for (const requested of requestedLevels) {
+    const choice = matchChoice(items, requested);
+    if (choice) return { choice, requested };
+  }
+  return { choice: null, requested: requestedLevels[0] || "" };
+}
+
 function choiceError(message, details = {}) {
   const error = new Error(message);
   error.errorCode = "model.option_unavailable";
@@ -268,43 +276,48 @@ async function readChoicesUntilReady(cdp, { needsLevel = false, needsModel = fal
   return choices;
 }
 
-export async function setChatGptChoices(cdp, { level, model } = {}) {
+export async function setChatGptChoices(cdp, { level, levelPreferences = [], model } = {}) {
+  const requestedLevels = levelPreferences.length ? levelPreferences : (level ? [level] : []);
   const before = await readChoicesUntilReady(cdp, {
-    needsLevel: !!level,
+    needsLevel: requestedLevels.length > 0,
     needsModel: !!model,
   });
   const selected = {};
   const skipped = {};
 
-  if (level && normalize(level) === normalize(before.intelligence.current)) {
+  if (requestedLevels.some((requested) => normalize(requested) === normalize(before.intelligence.current))) {
     selected.level = before.intelligence.current;
     skipped.level = "already-current";
-  } else if (level) {
+  } else if (requestedLevels.length) {
     let choice = null;
+    let matchedRequest = requestedLevels[0];
     let choices = [];
     try {
       for (let attempt = 0; attempt < 4; attempt++) {
         await openIntelligenceMenu(cdp);
         const menus = await readVisibleChoiceMenus(cdp);
         choices = menus[0]?.items.filter((item) => item.role === "menuitemradio") || [];
-        choice = matchChoice(choices, level);
+        const match = matchChoicePreference(choices, requestedLevels);
+        choice = match.choice;
+        matchedRequest = match.requested;
         if (choice) break;
         await closeMenus(cdp);
         await sleep(500);
       }
       if (!choice) {
         const available = choices.map((item) => item.label).join(", ") || "none";
-        throw choiceError(`ChatGPT intelligence level not found: ${level}. Available: ${available}`, {
-          requested: level,
+        throw choiceError(`ChatGPT intelligence level not found: ${requestedLevels.join(", ")}. Available: ${available}`, {
+          requested: requestedLevels,
           available: choices.map((item) => item.label),
         });
       }
       if (choice.disabled) throw choiceError(`ChatGPT intelligence level is disabled: ${choice.label}`, {
-        requested: level,
+        requested: matchedRequest,
         disabled: choice.label,
       });
       await clickAt(cdp, choice.x, choice.y);
       selected.level = choice.label;
+      selected.levelRequestedAs = matchedRequest;
       await sleep(MENU_OPEN_DELAY_MS);
     } finally {
       await closeMenus(cdp);

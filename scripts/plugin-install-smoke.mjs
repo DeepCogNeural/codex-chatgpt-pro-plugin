@@ -88,13 +88,13 @@ function commandOutput(result) {
 
 try {
   run(codexCommand, ["--version"]);
-  const addMarketplace = run(codexCommand, ["--enable", "plugins", "plugin", "marketplace", "add", repoRoot, "--json"]);
+  const addMarketplace = run(codexCommand, ["--enable", "plugins", "plugin", "marketplace", "add", repoRoot]);
 
-  const available = run(codexCommand, ["--enable", "plugins", "plugin", "list", "--available", "--json"]);
+  const available = run(codexCommand, ["--enable", "plugins", "plugin", "list", "--marketplace", pluginName]);
 
-  const install = run(codexCommand, ["--enable", "plugins", "plugin", "add", `${pluginName}@${pluginName}`, "--json"]);
+  const install = run(codexCommand, ["--enable", "plugins", "plugin", "add", `${pluginName}@${pluginName}`]);
 
-  const installed = run(codexCommand, ["--enable", "plugins", "plugin", "list", "--json"]);
+  const installed = run(codexCommand, ["--enable", "plugins", "plugin", "list", "--marketplace", pluginName]);
 
   const installJson = maybeJson(commandOutput(install));
   let pluginRoot = installJson?.installedPath || "";

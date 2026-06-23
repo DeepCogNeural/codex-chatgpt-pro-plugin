@@ -13,6 +13,7 @@ import {
   inputPrompt,
   submitPrompt,
   waitForAssistantResponseAfterUser,
+  waitForNoActiveGeneration,
   waitForReadyProbe,
 } from "../src/chatgpt-composer.mjs";
 import { composeContextEnvelope } from "../src/context-envelope.mjs";
@@ -49,6 +50,14 @@ import {
   runDir as makeRunDir,
   runId as makeRunId,
 } from "../src/runtime-config.mjs";
+import {
+  appendCompletionMarkerInstruction,
+  completionMarkerFromEnv,
+  completionMarkerRequired,
+  resolveChatGptProjectTarget,
+  resolveLevelRequest,
+  resolveThreadPolicy,
+} from "../src/chatgpt-call-policy.mjs";
 
 function arg(name) {
   const prefix = `--${name}=`;
@@ -141,9 +150,15 @@ function buildPrompt() {
     else uploadFiles.push(autoContextBundle.context);
   }
 
+  const marker = completionMarkerFromEnv({ explicitMarker: arg("completion-marker") });
+  const requireCompletionMarker = completionMarkerRequired({ disabled: flag("no-completion-marker") });
   const envelope = composeContextEnvelope({ prompt: composed, contextDir });
+  const promptWithCompletionRule = appendCompletionMarkerInstruction(envelope.prompt, {
+    marker,
+    required: requireCompletionMarker,
+  });
   return {
-    prompt: envelope.prompt,
+    prompt: promptWithCompletionRule,
     promptFile,
     contextFile,
     contextDir,
@@ -154,6 +169,8 @@ function buildPrompt() {
     repoContextDecision,
     autoContextBundle,
     contextEnvelope: envelope.context,
+    completionMarker: marker,
+    requireCompletionMarker,
   };
 }
 
@@ -177,28 +194,39 @@ async function step(receipt, name, fn) {
 }
 
 async function main() {
-  const targetUrl = process.env.BROWSER_TARGET_URL || DEFAULT_TARGET_URL;
+  const chatGptProjectUrl = resolveChatGptProjectTarget({
+    explicitProjectUrl: arg("project-url") || arg("chatgpt-project-url") || "",
+  });
+  const targetUrl = chatGptProjectUrl || process.env.BROWSER_TARGET_URL || DEFAULT_TARGET_URL;
   const session = arg("session") || arg("alias") || process.env.CHATGPT_SESSION || "";
   const freshThread = flag("fresh");
-  const newBoundThread = flag("new") || flag("new-thread");
+  const requestedNewBoundThread = flag("new") || flag("new-thread");
+  const reuseRoom = flag("reuse-room") || flag("continue-room") || boolEnv("CHATGPT_REUSE_ROOM");
   const conversationUrl = arg("conversation-url") || "";
-  const threadMode = freshThread
-    ? "fresh"
-    : newBoundThread
-      ? "new_bound"
-      : flag("rebind-alias")
-        ? "rebind"
-        : "continue";
-  const newChat = freshThread
-    || newBoundThread
-    || boolEnv("CHATGPT_NEW_CHAT", !session && targetUrl === DEFAULT_TARGET_URL);
   const responseTimeoutMs = Number(process.env.CHATGPT_RESPONSE_TIMEOUT_MS || 300_000);
   const stableMs = Number(process.env.CHATGPT_RESPONSE_STABLE_MS || 4_000);
   const explicitLevel = arg("level") || arg("intelligence") || process.env.CHATGPT_LEVEL || process.env.CHATGPT_INTELLIGENCE || "";
-  const requestedLevel = explicitLevel || (flag("no-default-pro") ? "" : (process.env.CHATGPT_DEFAULT_LEVEL || "Pro"));
-  const requestedModel = process.env.CHATGPT_MODEL || "";
+  const levelRequest = resolveLevelRequest({
+    explicitLevel,
+    noDefaultPro: flag("no-default-pro"),
+  });
+  const requestedLevel = levelRequest.requestedLevel;
+  const requestedModel = arg("model") || process.env.CHATGPT_MODEL || "";
   const responseMode = arg("response-mode") || process.env.CHATGPT_RESPONSE_MODE || "blocking";
   const rebindAlias = flag("rebind-alias");
+  const threadPolicy = resolveThreadPolicy({
+    session,
+    freshThread,
+    requestedNewBoundThread,
+    reuseRoom,
+    rebindAlias,
+    targetUrl,
+    chatGptProjectUrl,
+    envNewChat: boolEnv("CHATGPT_NEW_CHAT", null),
+  });
+  const newBoundThread = threadPolicy.newBoundThread;
+  const newChat = threadPolicy.newChat;
+  const threadMode = threadPolicy.threadMode;
   const lockTimeoutMs = Number(arg("lock-timeout-ms") || process.env.CHATGPT_LOCK_TIMEOUT_MS || 600_000);
   const noWaitForLock = flag("no-wait");
   const staleLockTtlMs = Number(arg("stale-lock-ttl-ms") || process.env.CHATGPT_STALE_LOCK_TTL_MS || 900_000);
@@ -243,7 +271,7 @@ async function main() {
     room: {
       alias: session || null,
       threadMode,
-      aliasBound: Boolean(session && !freshThread),
+      aliasBound: threadPolicy.aliasBound,
       conversationUrl: conversationUrl || null,
     },
     automation: {
@@ -251,6 +279,12 @@ async function main() {
       voiceControlsAllowed: false,
     },
     project,
+    chatGptProject: {
+      url: chatGptProjectUrl || null,
+      projectScoped: threadPolicy.projectScoped,
+      defaultNewConversation: Boolean(threadPolicy.projectScoped && session && !reuseRoom),
+      reuseRequested: reuseRoom,
+    },
     rebindAlias,
     promptFile: promptInput.promptFile || null,
     contextFile: promptInput.contextFile || null,
@@ -263,8 +297,17 @@ async function main() {
     responseMode,
     desiredChatGpt: {
       intelligence: requestedLevel || null,
+      intelligencePreferences: levelRequest.levelPreferences,
       model: requestedModel || null,
-      defaultedToPro: !explicitLevel && requestedLevel === "Pro",
+      defaultedToProExtended: levelRequest.defaultedToProExtended,
+      explicitLevel: levelRequest.explicit,
+    },
+    completion: {
+      required: promptInput.requireCompletionMarker,
+      marker: promptInput.requireCompletionMarker ? promptInput.completionMarker : null,
+      rule: promptInput.requireCompletionMarker
+        ? "Do not proceed until ChatGPT has finished and the final non-empty line equals the marker."
+        : "disabled",
     },
     promptLength: promptInput.prompt.length,
     input: {
@@ -284,11 +327,6 @@ async function main() {
     if (responseMode !== "blocking") {
       const error = new Error(`Unsupported ChatGPT response mode: ${responseMode}. Only blocking is implemented.`);
       error.errorCode = "mode.unsupported";
-      throw error;
-    }
-    if (freshThread && newBoundThread) {
-      const error = new Error("Use only one of --fresh or --new.");
-      error.errorCode = "session.thread_mode_conflict";
       throw error;
     }
     if (newBoundThread && !session) {
@@ -400,13 +438,30 @@ async function main() {
       throw new Error(receipt.error);
     }
 
+    await step(receipt, "wait-active-run-before-choices", () =>
+      waitForNoActiveGeneration(cdp, {
+        phase: "before reading or changing ChatGPT choices",
+        timeoutMs: responseTimeoutMs,
+      }),
+    );
+
     runState.update("reading-choices");
     receipt.chatgpt = requestedLevel || requestedModel
       ? await step(receipt, "set-choices", () =>
-          setChatGptChoices(cdp, { level: requestedLevel, model: requestedModel }),
+          setChatGptChoices(cdp, {
+            level: explicitLevel || "",
+            levelPreferences: levelRequest.levelPreferences,
+            model: requestedModel,
+          }),
         )
       : await step(receipt, "read-choices", () => readChatGptChoices(cdp));
 
+    await step(receipt, "wait-active-run-before-upload", () =>
+      waitForNoActiveGeneration(cdp, {
+        phase: "before uploading files",
+        timeoutMs: responseTimeoutMs,
+      }),
+    );
     if (promptInput.uploadFiles.length) {
       runState.update("uploading");
       receipt.upload = await step(receipt, "uploaded-files", () =>
@@ -424,9 +479,21 @@ async function main() {
     };
 
     runState.update("typing");
+    await step(receipt, "wait-active-run-before-typing", () =>
+      waitForNoActiveGeneration(cdp, {
+        phase: "before typing a new prompt",
+        timeoutMs: responseTimeoutMs,
+      }),
+    );
     await step(receipt, "typed-prompt", () => inputPrompt(cdp, initial.composer, promptInput.prompt));
 
     runState.update("sending");
+    await step(receipt, "wait-active-run-before-send", () =>
+      waitForNoActiveGeneration(cdp, {
+        phase: "before sending a new prompt",
+        timeoutMs: responseTimeoutMs,
+      }),
+    );
     const beforeSend = await pageProbe(cdp);
     const sent = await step(receipt, "sent-prompt", () =>
       submitPrompt(cdp, {
@@ -462,6 +529,8 @@ async function main() {
       waitForAssistantResponseAfterUser(cdp, sentUser.message, {
         timeoutMs: responseTimeoutMs,
         stableMs,
+        requireCompletionMarker: promptInput.requireCompletionMarker,
+        completionMarker: promptInput.completionMarker,
       }),
     );
     const finalMessages = response.snapshot || await snapshotConversationMessages(cdp);
