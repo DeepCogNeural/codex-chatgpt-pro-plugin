@@ -139,3 +139,34 @@ Make daily agent calls stop depending on every caller remembering the ChatGPT Pr
 - Set `/Users/linghao/Github/Polymarket-OB-LP` repo-local git config `chatgpt-pro.projectUrl=https://chatgpt.com/g/g-p-6a35e91256988191b967fe33344b0f04-polymarket-lp`.
 - Verified `configuredChatGptProjectUrl()` resolves that Polymarket Project URL when `CHATGPT_REPO_ROOT=/Users/linghao/Github/Polymarket-OB-LP`.
 - Cleared two stale duplicate-upload modals in existing ChatGPT Project tabs after confirming no active run; follow-up scan found no remaining duplicate-upload modal targets.
+
+## 2026-06-23 Explicit Duplicate Upload Cleanup Command
+
+### Goal
+
+Give agents a one-command escape hatch when ChatGPT shows `You've already uploaded this file`.
+
+### Fix
+
+- Added `chatgpt-pro cleanup duplicate-upload`.
+- The command scans visible ChatGPT tabs and dismisses only duplicate-upload OK modals.
+- If ChatGPT generation state is active or unknown, it only dismisses the modal and does not remove attachments.
+- If ChatGPT is idle, it also removes stale composer attachments left by older failed upload attempts.
+- The cleanup command uses the global live-browser operation lock, so it cannot race normal `call`, `read`, room repair, or history export operations.
+- Documented the command in README, the packaged skill, and the call contract.
+
+### Verification
+
+- RED: `node scripts/cleanup-duplicate-upload-selftest.mjs` failed because `src/chatgpt-cleanup.mjs` did not exist.
+- GREEN: `npm run test:cleanup-duplicate-upload`: passed.
+- `npm run test:public-concurrency`: passed.
+- `npm run test:operation-boundary`: passed.
+- `npm run test:non-interference`: passed.
+- `npm run test:package-surface`: passed.
+- Live no-prompt smoke: `./bin/chatgpt-pro cleanup duplicate-upload` scanned 13 ChatGPT tabs and returned `cleaned: 0`.
+- `npm run plugin:sync`: passed.
+- `npm run test:deterministic`: passed.
+- `git diff --check`: passed.
+- `node --check scripts/chatgpt-cleanup.mjs src/chatgpt-cleanup.mjs bin/chatgpt-pro`: passed.
+- Refreshed installed Codex plugin cache with `/Users/linghao/.local/bin/codex --enable plugins plugin add codex-chatgpt-pro-plugin@codex-chatgpt-pro-plugin`.
+- Installed-cache no-prompt smoke: `/Users/linghao/.codex/plugins/cache/codex-chatgpt-pro-plugin/codex-chatgpt-pro-plugin/0.1.0/bin/chatgpt-pro cleanup duplicate-upload` scanned 13 ChatGPT tabs and returned `cleaned: 0`.

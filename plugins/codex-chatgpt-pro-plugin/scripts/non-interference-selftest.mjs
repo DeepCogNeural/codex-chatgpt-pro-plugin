@@ -5,6 +5,7 @@ import { repoRoot } from "../src/runtime-config.mjs";
 
 const checkedFiles = [
   "scripts/chatgpt-call.mjs",
+  "scripts/chatgpt-cleanup.mjs",
   "src/chatgpt-composer.mjs",
   "src/chatgpt-messages.mjs",
   "src/context-envelope.mjs",
@@ -12,6 +13,7 @@ const checkedFiles = [
   "src/chatgpt/run-envelope.mjs",
   "src/repo-context-bundle.mjs",
   "src/chatgpt-upload.mjs",
+  "src/chatgpt-cleanup.mjs",
   "src/atomic-json.mjs",
   "src/project-state-lock.mjs",
 ];

@@ -106,6 +106,9 @@ chatgpt-pro history export --alias=spec --last=20
 
 # Re-point or fix a room's target after drift
 chatgpt-pro rooms repair --alias=main
+
+# If ChatGPT shows "You've already uploaded this file", dismiss it safely
+chatgpt-pro cleanup duplicate-upload
 ```
 
 Room lifecycle commands (`rooms new`, `rooms rebind`, `rooms repair`, and
@@ -148,6 +151,10 @@ solve duplicate modals by retrying, reloading, or interrupting a running answer.
 At call start, after confirming ChatGPT is not actively generating, the wrapper
 also dismisses stale duplicate-upload modals and removes stale composer
 attachments left by older failed runs.
+If an agent sees the duplicate-upload modal outside a normal call, run
+`chatgpt-pro cleanup duplicate-upload`. It scans visible ChatGPT tabs and clicks
+only the duplicate modal OK button; if ChatGPT is still thinking, it does not
+reload, stop, resend, or clear attachments.
 
 Project source/knowledge upload is separate from ordinary message attachment:
 
@@ -228,6 +235,7 @@ CLI. Inside this source repo the same behavior is available via `npm run`:
 | `npm run rooms:list` | List repo-owned rooms (no CDP) |
 | `npm run context:bundle -- --name=focused` | Build the repo-context monofile |
 | `npm run chatgpt:call -- --alias=main --message-file=prompt.md` | Source-repo alias for `chatgpt-pro call` |
+| `./bin/chatgpt-pro cleanup duplicate-upload` | Dismiss ChatGPT duplicate-upload modals safely |
 | `./bin/chatgpt-pro project-source upload --project-url=... --source-file=... --confirm-project-source-upload` | Upload explicit files to ChatGPT Project source/knowledge |
 | `npm run history:export -- --alias=spec --last=20` | Export visible history |
 | `npm run plugin:sync` | Refresh the materialized install bundle |

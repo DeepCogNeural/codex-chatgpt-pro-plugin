@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 const publicScripts = [
   "scripts/chatgpt-call.mjs",
+  "scripts/chatgpt-cleanup.mjs",
   "scripts/chatgpt-doctor.mjs",
   "scripts/chatgpt-read-current.mjs",
   "scripts/chatgpt-history.mjs",

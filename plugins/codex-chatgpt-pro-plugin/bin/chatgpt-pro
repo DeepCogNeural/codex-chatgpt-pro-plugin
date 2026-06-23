@@ -30,6 +30,7 @@ function usage() {
     "  status               Show repo room, lock, and cache status without CDP",
     "  call                 Send a blocking ChatGPT Pro message",
     "  read                 Read the current ChatGPT Pro response",
+    "  cleanup duplicate-upload Dismiss duplicate-upload modals without interrupting ChatGPT",
     "  rooms <command>      Repo room lifecycle commands",
     "  project-source upload Upload files to a ChatGPT Project source/knowledge area",
     "  context bundle       Build repo context monofile and manifest",
@@ -124,6 +125,9 @@ if (command === "doctor") {
 } else if (command === "read") {
   process.argv = [process.argv[0], resolve(packageRoot, "scripts", "chatgpt-read-current.mjs"), ...rest];
   await import("../scripts/chatgpt-read-current.mjs");
+} else if (command === "cleanup") {
+  process.argv = [process.argv[0], resolve(packageRoot, "scripts", "chatgpt-cleanup.mjs"), ...rest];
+  await import("../scripts/chatgpt-cleanup.mjs");
 } else if (command === "rooms") {
   process.argv = [process.argv[0], resolve(packageRoot, "scripts", "chatgpt-rooms.mjs"), ...rest];
   await import("../scripts/chatgpt-rooms.mjs");
