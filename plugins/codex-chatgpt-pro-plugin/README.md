@@ -132,6 +132,16 @@ Generated `repo-context.md` is secret-scanned and requires
 Use `--repo-context=off` / `--no-repo-context` or pass explicit scrubbed
 `--upload-file` artifacts for narrower calls.
 
+Upload dedupe is local and automatic. The CLI records successful uploads in
+`.devspace/state/chatgpt-upload-ledger.json`. Ordinary message attachments are
+scoped by the actual ChatGPT conversation URL, not just the Project URL, so a
+new conversation still receives its own attachments. Project source uploads are
+scoped by Project URL. If the same file content was already uploaded in that
+scope, the next call skips the upload instead of triggering ChatGPT's
+duplicate-file modal. If the file content changes, the staged upload filename
+includes the new content hash, so ChatGPT sees a new version. Agents should not
+solve duplicate modals by retrying, reloading, or interrupting a running answer.
+
 Project source/knowledge upload is separate from ordinary message attachment:
 
 ```bash

@@ -269,6 +269,16 @@ The wrapper composes `input.md`, records inline context hashes/budgets,
 attachment paths/sizes/hashes/upload status in `receipt.json`, and saves the
 exact typed exchange in `transcript.md`.
 
+Upload dedupe is automatic. The CLI records successful uploads in
+`.devspace/state/chatgpt-upload-ledger.json`. Ordinary message attachments are
+scoped by the actual ChatGPT conversation URL, not just the Project URL; new
+conversations upload normally and are recorded only after the sent user message
+is verified. Project source uploads are scoped by Project URL. If the same
+content was already uploaded in that scope, the next call skips the upload and
+reports `receipt.upload.skipped`; if content changed, the staged filename
+includes the new content hash. Do not retry, reload, or interrupt ChatGPT to
+handle duplicate file modals.
+
 For human-driven ChatGPT threads, bind the thread URL to a repo alias and export
 visible history before asking Codex to continue from it. Prefer `rooms rebind`
 because it binds or verifies the room without sending a prompt.

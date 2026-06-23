@@ -19,7 +19,12 @@ import {
 import { composeContextEnvelope } from "../src/context-envelope.mjs";
 import { buildRepoContextBundle } from "../src/repo-context-bundle.mjs";
 import { decideRepoContextMode } from "../src/repo-context-policy.mjs";
-import { uploadFiles as uploadChatGptFiles } from "../src/chatgpt-upload.mjs";
+import {
+  defaultUploadLedgerPath,
+  messageUploadScopeKey,
+  recordUploadedFiles,
+  uploadFiles as uploadChatGptFiles,
+} from "../src/chatgpt-upload.mjs";
 import {
   countMessagesByRole,
   findAssistantAfterUser,
@@ -465,7 +470,14 @@ async function main() {
     if (promptInput.uploadFiles.length) {
       runState.update("uploading");
       receipt.upload = await step(receipt, "uploaded-files", () =>
-        uploadChatGptFiles(cdp, promptInput.uploadFiles, { stageDir: resolve(runDir, "uploads") }),
+        uploadChatGptFiles(cdp, promptInput.uploadFiles, {
+          stageDir: resolve(runDir, "uploads"),
+          ledgerPath: defaultUploadLedgerPath,
+          scopeKey: messageUploadScopeKey({
+            projectId: project.projectId,
+            conversationUrl: receipt.room.conversationUrl || connectedTarget?.url || "",
+          }),
+        }),
       );
     }
 
@@ -514,6 +526,29 @@ async function main() {
       charCount: sentUser.message.charCount,
       promptEchoVerification: sentUser.promptEchoVerification,
     };
+    if (receipt.upload?.files?.length && !receipt.upload.ledger?.recorded) {
+      const postSendProbe = await step(receipt, "record-upload-ledger", async () => {
+        const probe = await pageProbe(cdp);
+        const scopeKey = messageUploadScopeKey({
+          projectId: project.projectId,
+          conversationUrl: probe.url || receipt.room.conversationUrl || connectedTarget?.url || "",
+        });
+        if (!scopeKey) {
+          return {
+            recorded: false,
+            reason: "conversation_url_unavailable_after_send",
+            path: defaultUploadLedgerPath,
+            scopeKey: null,
+          };
+        }
+        return recordUploadedFiles({
+          files: receipt.upload.files,
+          ledgerPath: defaultUploadLedgerPath,
+          scopeKey,
+        }, { uploadKind: "message-attachment" });
+      });
+      receipt.upload.ledger = postSendProbe;
+    }
 
     runState.update("waiting-for-assistant-start");
     const startedAssistant = await step(receipt, "assistant-started", () =>

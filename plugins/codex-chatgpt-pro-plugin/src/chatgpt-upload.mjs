@@ -1,7 +1,9 @@
-import { basename, extname, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { evaluate, sleep } from "./cdp-client.mjs";
+import { writeJsonAtomic } from "./atomic-json.mjs";
+import { stateRoot } from "./runtime-config.mjs";
 
 function fileSha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -22,11 +24,36 @@ function utcFileStamp(date = new Date()) {
   return date.toISOString().replace(/[:.]/g, "-");
 }
 
-function stampedName(name, stamp, index) {
+export const defaultUploadLedgerPath = resolve(stateRoot, "chatgpt-upload-ledger.json");
+
+export function chatGptConversationScopeUrl(url = "") {
+  const value = String(url || "").trim();
+  const match = value.match(/^https:\/\/chatgpt\.com\/c\/[^/?#]+/i);
+  return match ? match[0] : "";
+}
+
+export function messageUploadScopeKey({
+  projectId = "unknown-project",
+  conversationUrl = "",
+} = {}) {
+  const scopedConversationUrl = chatGptConversationScopeUrl(conversationUrl);
+  return scopedConversationUrl ? `message|${projectId}|conversation:${scopedConversationUrl}` : "";
+}
+
+export function projectSourceUploadScopeKey({ projectId = "unknown-project", projectUrl = "" } = {}) {
+  return `project-source|${projectId}|${projectUrl || "unknown-project-url"}`;
+}
+
+function shortSha(sha256) {
+  return String(sha256 || "").slice(0, 12);
+}
+
+function stampedName(name, stamp, index, sha256 = "") {
   const ext = extname(name);
   const stem = ext ? name.slice(0, -ext.length) : name;
   const ordinal = index > 0 ? `-${index + 1}` : "";
-  return `${stem}.${stamp}${ordinal}${ext}`;
+  const content = sha256 ? `.${shortSha(sha256)}` : "";
+  return `${stem}${content}.${stamp}${ordinal}${ext}`;
 }
 
 function displayOriginalPath(path) {
@@ -59,6 +86,33 @@ function textUploadExtension(path) {
     ".yaml",
     ".yml",
   ]).has(extname(path).toLowerCase());
+}
+
+function emptyUploadLedger() {
+  return { schemaVersion: 1, scopes: {} };
+}
+
+function readUploadLedger(path) {
+  if (!path || !existsSync(path)) return emptyUploadLedger();
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    return parsed && typeof parsed === "object" && parsed.schemaVersion === 1
+      ? { ...emptyUploadLedger(), ...parsed, scopes: parsed.scopes || {} }
+      : emptyUploadLedger();
+  } catch {
+    return emptyUploadLedger();
+  }
+}
+
+function ledgerScope(ledger, scopeKey) {
+  if (!ledger.scopes[scopeKey]) {
+    ledger.scopes[scopeKey] = {
+      uploadedBySha256: {},
+      updatedAt: null,
+    };
+  }
+  if (!ledger.scopes[scopeKey].uploadedBySha256) ledger.scopes[scopeKey].uploadedBySha256 = {};
+  return ledger.scopes[scopeKey];
 }
 
 async function fileInputNodeId(cdp) {
@@ -123,17 +177,17 @@ export function describeUploadFiles(paths) {
   });
 }
 
-export function stageUploadFiles(paths, { stageDir, stamp = utcFileStamp() } = {}) {
-  if (!stageDir) return describeUploadFiles(paths);
-  const originals = describeUploadFiles(paths);
+function stageDescribedUploadFiles(originals, { stageDir, stamp = utcFileStamp() } = {}) {
+  if (!stageDir) return originals;
   mkdirSync(stageDir, { recursive: true, mode: 0o700 });
   return originals.map((original, index) => {
-    const stagedPath = resolve(stageDir, stampedName(original.name, stamp, index));
+    const stagedPath = resolve(stageDir, stampedName(original.name, stamp, index, original.sha256));
     if (textUploadExtension(original.path)) {
       const source = readFileSync(original.path, "utf8");
       writeFileSync(stagedPath, [
         "<!-- chatgpt-pro-codex staged upload metadata",
         `uploaded-at-utc: ${stamp}`,
+        `content-version-sha256: ${original.sha256}`,
         `original-name: ${original.name}`,
         `original-path: ${displayOriginalPath(original.path)}`,
         `original-bytes: ${original.bytes}`,
@@ -165,6 +219,78 @@ export function stageUploadFiles(paths, { stageDir, stamp = utcFileStamp() } = {
       stagedAt: stamp,
     };
   });
+}
+
+export function prepareUploadFiles(paths, {
+  stageDir,
+  stamp = utcFileStamp(),
+  ledgerPath = "",
+  scopeKey = "default",
+  skipKnown = true,
+} = {}) {
+  const originals = describeUploadFiles(paths);
+  const ledger = readUploadLedger(ledgerPath);
+  const scope = ledgerScope(ledger, scopeKey);
+  const filesToStage = [];
+  const skipped = [];
+
+  for (const original of originals) {
+    const previous = skipKnown ? scope.uploadedBySha256[original.sha256] : null;
+    if (previous) {
+      skipped.push({
+        reason: "already_uploaded_same_content",
+        original,
+        previous,
+      });
+    } else {
+      filesToStage.push(original);
+    }
+  }
+
+  return {
+    files: stageDescribedUploadFiles(filesToStage, { stageDir, stamp }),
+    skipped,
+    ledgerPath: ledgerPath || null,
+    scopeKey,
+  };
+}
+
+export function recordUploadedFiles(prepared, {
+  uploadedAt = new Date().toISOString(),
+  uploadKind = "message-attachment",
+} = {}) {
+  const files = Array.isArray(prepared) ? prepared : prepared.files || [];
+  const ledgerPath = Array.isArray(prepared) ? "" : prepared.ledgerPath;
+  const scopeKey = Array.isArray(prepared) ? "default" : prepared.scopeKey;
+  if (!ledgerPath || !scopeKey || !files.length) {
+    return { recorded: false, files: files.length, ledgerPath: ledgerPath || null, scopeKey: scopeKey || null };
+  }
+
+  const ledger = readUploadLedger(ledgerPath);
+  const scope = ledgerScope(ledger, scopeKey);
+  for (const file of files) {
+    const original = file.original || file;
+    scope.uploadedBySha256[original.sha256] = {
+      uploadKind,
+      uploadedAt,
+      originalName: original.name,
+      originalBytes: original.bytes,
+      originalSha256: original.sha256,
+      stagedName: file.name,
+      stagedSha256: file.sha256,
+      stagedPath: file.path,
+      stagedAt: file.stagedAt || null,
+    };
+  }
+  scope.updatedAt = uploadedAt;
+  ledger.updatedAt = uploadedAt;
+  mkdirSync(dirname(ledgerPath), { recursive: true, mode: 0o700 });
+  writeJsonAtomic(ledgerPath, ledger);
+  return { recorded: true, files: files.length, ledgerPath, scopeKey };
+}
+
+export function stageUploadFiles(paths, { stageDir, stamp = utcFileStamp() } = {}) {
+  return prepareUploadFiles(paths, { stageDir, stamp, skipKnown: false }).files;
 }
 
 async function waitForUploadEvidence(cdp, files, { timeoutMs = 60_000 } = {}) {
@@ -235,9 +361,35 @@ async function waitForUploadEvidence(cdp, files, { timeoutMs = 60_000 } = {}) {
   };
 }
 
-export async function uploadFiles(cdp, paths, { timeoutMs = 60_000, stageDir = "" } = {}) {
-  const files = stageUploadFiles(paths, { stageDir });
-  if (!files.length) return { ok: true, files: [], inputSelector: null, evidence: null };
+export async function uploadFiles(cdp, paths, {
+  timeoutMs = 60_000,
+  stageDir = "",
+  ledgerPath = defaultUploadLedgerPath,
+  scopeKey = "default",
+  skipKnownUploads = true,
+} = {}) {
+  const prepared = prepareUploadFiles(paths, {
+    stageDir,
+    ledgerPath: scopeKey ? ledgerPath : "",
+    scopeKey: scopeKey || "unscoped-message-upload",
+    skipKnown: skipKnownUploads && Boolean(scopeKey),
+  });
+  const files = prepared.files;
+  if (!files.length) {
+    return {
+      ok: true,
+      files: [],
+      skipped: prepared.skipped,
+      inputSelector: null,
+      evidence: null,
+      ledger: {
+        path: prepared.ledgerPath,
+        scopeKey: prepared.scopeKey,
+        recorded: false,
+        pending: false,
+      },
+    };
+  }
 
   await cdp.send("DOM.enable").catch(() => {});
   const dismissedDialog = await dismissUploadDialog(cdp);
@@ -266,18 +418,26 @@ export async function uploadFiles(cdp, paths, { timeoutMs = 60_000, stageDir = "
   if (!evidence.ok) {
     throw uploadError("input.attachment_upload_failed", "Files were set on the ChatGPT file input, but upload chips were not observed.", {
       files,
+      skipped: prepared.skipped,
       evidence,
     });
   }
-
   return {
     ok: true,
     inputSelector: input.selector,
     files,
+    skipped: prepared.skipped,
     cleanup: {
       dismissedDialog,
       removedExisting,
     },
     evidence,
+    ledger: {
+      path: prepared.ledgerPath,
+      scopeKey: prepared.scopeKey,
+      recorded: false,
+      pending: Boolean(prepared.ledgerPath && prepared.scopeKey),
+      recordAfter: "verified_user_message",
+    },
   };
 }
