@@ -35,10 +35,11 @@ Don't spend the line on trivial syntax checks.
 
 ## Major features
 
-- **Repo- and agent-scoped rooms.** ChatGPT conversations are bound to your git
-  repo and, by default, to the calling Codex agent. A logical alias such as
-  `critic` becomes an effective room like `critic--agent-<codex-thread>`, so two
-  agents do not reuse each other's ChatGPT conversation by accident.
+- **Repo- and task-scoped rooms.** ChatGPT conversations are bound to your git
+  repo and, by default, to the current Codex task. A logical alias such as
+  `critic` becomes an effective room like
+  `critic--task-<codex-task>--agent-<agent>`, so separate tasks do not reuse
+  each other's ChatGPT conversation by accident.
 - **Repo-as-context, in one file.** Generates a repomix-style `repo-context.md`
   monofile (source tree, LOC, file bodies, line-range source map, hashes), blocks
   secret-like paths/content before writing it, and uploads it only after explicit
@@ -87,13 +88,13 @@ chatgpt-pro call --alias=main --confirm-repo-context-upload --prompt="Review thi
 # Configure this repo once so agents do not need to remember the Project URL
 git config --local chatgpt-pro.projectUrl https://chatgpt.com/g/...
 
-# Daily advisor flow: uses the configured ChatGPT Project and this agent's own room
-chatgpt-pro call --alias=polymarket-lp --prompt-file=advisor.md
+# Daily advisor flow: uses the configured ChatGPT Project and opens this task's own conversation
+chatgpt-pro call --alias=polymarket-lp --task-id=lp-release-review --prompt-file=advisor.md
 
-# Explicitly reuse this same agent's previous bound room only when continuity is intended
-chatgpt-pro call --alias=polymarket-lp --reuse-room --prompt-file=follow-up.md
+# Reuse this same task's bound conversation only when continuity is intended
+chatgpt-pro call --alias=polymarket-lp --task-id=lp-release-review --reuse-room --prompt-file=follow-up.md
 
-# Deliberately share the exact alias across agents only when that is intended
+# Deliberately share the exact alias across tasks/agents only when that is intended
 chatgpt-pro call --alias=polymarket-lp --shared-room --reuse-room --prompt-file=follow-up.md
 
 # Inspect repo room / lock / cache state without touching the browser
@@ -132,12 +133,17 @@ reload, retry, resend, or type over the active run.
 
 Project URL priority is explicit `--project-url`, then `CHATGPT_PROJECT_URL`,
 then the repo-local git config `chatgpt-pro.projectUrl`. When a Project URL is
-available, `call` uses a logical alias such as `main` or `polymarket-lp`, then
-scopes it by agent identity. Agent identity priority is `--agent-id`, then
-`CHATGPT_AGENT_ID`, then Codex thread/session environment variables such as
-`CODEX_THREAD_ID`. The room registry records the requested alias, effective
-alias, agent id, task title, and concise room label. Use `--shared-room` only
-when multiple agents should deliberately use the exact same ChatGPT room.
+available, `call` keeps that same ChatGPT Project but scopes the conversation
+by Codex task. A logical alias such as `main` or `polymarket-lp` resolves to an
+effective task room like
+`polymarket-lp--task-lp-release-review--agent-agent-a`. Task identity priority
+is `--task-id`, `CHATGPT_TASK_ID`, `CODEX_TASK_ID`, `CODEX_GOAL_ID`, then Codex
+thread/session environment variables such as `CODEX_THREAD_ID`; if none exists,
+the prompt/task title is hashed. Agent identity is still recorded for audit via
+`--agent-id`, `CHATGPT_AGENT_ID`, `CODEX_AGENT_ID`, or `AGENT_ID`. The room
+registry records the requested alias, effective alias, task id, agent id, task
+title, and concise room label. Use `--shared-room` only when multiple tasks or
+agents should deliberately use the exact same ChatGPT conversation.
 
 Generated `repo-context.md` is secret-scanned and requires
 `--confirm-repo-context-upload` or

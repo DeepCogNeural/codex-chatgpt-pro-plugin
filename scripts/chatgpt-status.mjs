@@ -15,7 +15,9 @@ const requestedAlias = arg("alias") || arg("session") || process.env.CHATGPT_SES
 const agentRoom = resolveAgentRoom({
   requestedAlias,
   explicitAgentId: arg("agent-id") || process.env.CHATGPT_AGENT_ID || "",
+  explicitTaskId: arg("task-id") || "",
   sharedRoom: flag("shared-room") || /^(1|true|yes)$/i.test(process.env.CHATGPT_SHARED_ROOM || ""),
+  taskTitle: arg("task-title") || process.env.CHATGPT_TASK_TITLE || "",
 });
 const alias = agentRoom.effectiveAlias;
 
@@ -30,8 +32,13 @@ try {
     roomResolution: {
       alias,
       requestedAlias: agentRoom.requestedAlias || null,
-      agentScoped: agentRoom.scoped,
+      scope: agentRoom.scope,
+      agentScoped: agentRoom.agentScoped,
+      taskScoped: agentRoom.taskScoped,
       agent: agentRoom.agent,
+      task: agentRoom.task,
+      taskTitle: agentRoom.taskTitle,
+      roomLabel: agentRoom.roomLabel || null,
     },
   }, null, 2));
 } catch (error) {

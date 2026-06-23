@@ -231,3 +231,31 @@ Handle duplicate-upload modals inside the normal upload flow, not only through a
 - `npm run test:deterministic`: passed.
 - `git diff --check`: passed.
 - `node --check src/chatgpt-upload.mjs scripts/upload-metadata-selftest.mjs`: passed.
+
+## 2026-06-23 Task-Scoped ChatGPT Project Conversations
+
+### Goal
+
+Keep using one ChatGPT Project as the workspace, but prevent different Codex
+tasks from sharing the same ChatGPT conversation by accident.
+
+### Correction
+
+- Agent-scoped rooms were not strict enough: the same Codex agent could start a
+  later task and reuse the previous task's conversation alias.
+- The default scope is now Codex task, not agent.
+- Effective aliases now include task identity:
+  `<logical-alias>--task-<task-slug>--agent-<agent-slug>`.
+- Task identity priority is `--task-id`, `CHATGPT_TASK_ID`, `CODEX_TASK_ID`,
+  `CODEX_GOAL_ID`, `CODEX_THREAD_ID`, `CODEX_SESSION_ID`, then prompt/task
+  title hash.
+- `--shared-room` remains the explicit escape hatch for intentionally sharing a
+  conversation across tasks or agents.
+- Follow-up within the same task should pass the same `--task-id` plus
+  `--reuse-room`.
+
+### Verification
+
+- RED: `node scripts/agent-room-policy-selftest.mjs` failed because
+  `resolveTaskIdentity` did not exist.
+- GREEN: `node scripts/agent-room-policy-selftest.mjs` passed.

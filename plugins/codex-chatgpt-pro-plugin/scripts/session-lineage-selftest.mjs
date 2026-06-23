@@ -50,19 +50,26 @@ try {
     agentRoom: {
       requestedAlias: "main",
       scoped: true,
+      scope: "task",
+      taskScoped: true,
+      agentScoped: false,
       agent: { id: "agent-a", slug: "agent-a", source: "explicit" },
+      task: { id: "task-a", slug: "task-a", source: "explicit" },
       taskTitle: "Review task",
-      roomLabel: "main / agent-a / Review task",
+      roomLabel: "main / Review task / agent-a",
     },
   });
   assert.equal(aliasUse.callCount, 1);
   assert.equal(aliasUse.recentRuns[0].runId, "run-1");
   assert.equal(aliasUse.lineage[0].lastRunId, "run-1");
   assert.equal(aliasUse.requestedAlias, "main");
-  assert.equal(aliasUse.agentScoped, true);
+  assert.equal(aliasUse.scope, "task");
+  assert.equal(aliasUse.agentScoped, false);
+  assert.equal(aliasUse.taskScoped, true);
   assert.equal(aliasUse.agent.slug, "agent-a");
+  assert.equal(aliasUse.task.slug, "task-a");
   assert.equal(aliasUse.taskTitle, "Review task");
-  assert.equal(aliasUse.roomLabel, "main / agent-a / Review task");
+  assert.equal(aliasUse.roomLabel, "main / Review task / agent-a");
 
   const fresh = recordFreshThread({
     aliasHint: "critic",
