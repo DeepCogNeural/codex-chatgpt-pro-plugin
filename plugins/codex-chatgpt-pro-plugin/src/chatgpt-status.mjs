@@ -26,6 +26,11 @@ function readRegistry(project) {
 function roomSummary(room) {
   return {
     alias: room.alias,
+    requestedAlias: room.requestedAlias || room.alias,
+    agentScoped: room.agentScoped === true,
+    agent: room.agent || null,
+    taskTitle: room.taskTitle || "",
+    roomLabel: room.roomLabel || "",
     activeConversationUrl: room.activeConversationUrl || room.conversationUrl || room.url || null,
     activeThreadId: room.activeThreadId || null,
     title: room.title || "",

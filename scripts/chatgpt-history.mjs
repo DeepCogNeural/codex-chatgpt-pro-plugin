@@ -6,6 +6,7 @@ import { compileHistoryArtifact, readHistoryArtifact } from "../src/chatgpt-hist
 import { withChatGptOperation } from "../src/chatgpt-operation.mjs";
 import { ensureProjectState } from "../src/project-state.mjs";
 import { DEFAULT_CDP_PORT, devspaceRoot, runId as makeRunId } from "../src/runtime-config.mjs";
+import { resolveAgentRoom } from "../src/agent-room-policy.mjs";
 
 function arg(name) {
   const prefix = `--${name}=`;
@@ -18,7 +19,13 @@ function flag(name) {
 }
 
 const command = process.argv[2] || "export";
-const alias = arg("alias") || arg("session") || process.env.CHATGPT_SESSION || "main";
+const requestedAlias = arg("alias") || arg("session") || process.env.CHATGPT_SESSION || "main";
+const agentRoom = resolveAgentRoom({
+  requestedAlias,
+  explicitAgentId: arg("agent-id") || process.env.CHATGPT_AGENT_ID || "",
+  sharedRoom: flag("shared-room") || /^(1|true|yes)$/i.test(process.env.CHATGPT_SHARED_ROOM || ""),
+});
+const alias = agentRoom.effectiveAlias;
 const conversationUrl = arg("conversation-url") || "";
 const last = Number(arg("last") || process.env.CHATGPT_HISTORY_LAST || 0);
 const requireVisibleMin = Number(arg("require-visible-min") || process.env.CHATGPT_HISTORY_REQUIRE_VISIBLE_MIN || 0);
@@ -111,6 +118,12 @@ try {
   const json = {
     ...compiled.json,
     command,
+    room: {
+      alias,
+      requestedAlias: agentRoom.requestedAlias || null,
+      agentScoped: agentRoom.scoped,
+      agent: agentRoom.agent,
+    },
     operation: operationResult.operation,
     locks: operationResult.locks,
     totalVisibleMessageCount: allMessages.length,

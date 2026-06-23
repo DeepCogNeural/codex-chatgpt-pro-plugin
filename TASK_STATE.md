@@ -171,6 +171,40 @@ Give agents a one-command escape hatch when ChatGPT shows `You've already upload
 - Refreshed installed Codex plugin cache with `/Users/linghao/.local/bin/codex --enable plugins plugin add codex-chatgpt-pro-plugin@codex-chatgpt-pro-plugin`.
 - Installed-cache no-prompt smoke: `/Users/linghao/.codex/plugins/cache/codex-chatgpt-pro-plugin/codex-chatgpt-pro-plugin/0.1.0/bin/chatgpt-pro cleanup duplicate-upload` scanned 13 ChatGPT tabs and returned `cleaned: 0`.
 
+## 2026-06-23 Agent-Scoped Room Isolation
+
+### Goal
+
+Prevent different Codex agents from accidentally sharing the same ChatGPT Project conversation when they pass the same logical alias such as `main`, `critic`, or `polymarket-lp`.
+
+### Fix
+
+- Added agent-room policy resolution.
+- A logical alias now resolves to an effective alias by default: `<alias>--agent-<agent-slug>`.
+- Agent identity priority: explicit `--agent-id`, `CHATGPT_AGENT_ID`, `CODEX_AGENT_ID`, `CODEX_THREAD_ID`, `CODEX_SESSION_ID`, then `AGENT_ID`.
+- `chatgpt-pro call` now defaults to logical alias `main` when a ChatGPT Project URL is configured but no alias is passed, so Project calls get a tracked room instead of an unbound tab.
+- `call`, `read`, `history export`, and `status` all resolve aliases the same way, so the same agent can reuse its own room.
+- `--shared-room` / `CHATGPT_SHARED_ROOM=1` is the explicit escape hatch for deliberate cross-agent sharing.
+- Room registry now records `requestedAlias`, `agentScoped`, `agent`, `taskTitle`, and `roomLabel`.
+- After a successful `call`, the browser tab title is best-effort labeled with the concise room label. The registry and receipt remain the durable source of truth.
+- README, packaged skill, and call contract now document the rule.
+
+### Verification
+
+- RED: `node scripts/agent-room-policy-selftest.mjs` failed because `src/agent-room-policy.mjs` did not exist.
+- GREEN: `npm run test:agent-room-policy`: passed.
+- `npm run test:session-lineage`: passed.
+- `npm run test:status`: passed.
+- `npm run test:package-surface`: passed.
+- No-browser CLI smoke:
+  - `./bin/chatgpt-pro status --alias=main --agent-id=agent-a` resolved alias `main--agent-agent-a`.
+  - `./bin/chatgpt-pro status --alias=main --agent-id=agent-b` resolved alias `main--agent-agent-b`.
+  - `./bin/chatgpt-pro status --alias=main --agent-id=agent-a --shared-room` resolved alias `main`.
+- `npm run plugin:sync`: passed.
+- `npm run test:deterministic`: passed.
+- `git diff --check`: passed.
+- `node --check scripts/chatgpt-call.mjs scripts/chatgpt-read-current.mjs scripts/chatgpt-history.mjs scripts/chatgpt-status.mjs src/agent-room-policy.mjs src/chatgpt-sessions.mjs`: passed.
+
 ## 2026-06-23 Upload-Path Duplicate Modal Auto Cleanup
 
 ### Goal

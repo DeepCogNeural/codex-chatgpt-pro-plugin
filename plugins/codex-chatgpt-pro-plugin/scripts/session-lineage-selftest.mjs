@@ -47,10 +47,22 @@ try {
     runId: "run-1",
     receiptPath: "/tmp/run-1/receipt.json",
     transcriptPath: "/tmp/run-1/transcript.md",
+    agentRoom: {
+      requestedAlias: "main",
+      scoped: true,
+      agent: { id: "agent-a", slug: "agent-a", source: "explicit" },
+      taskTitle: "Review task",
+      roomLabel: "main / agent-a / Review task",
+    },
   });
   assert.equal(aliasUse.callCount, 1);
   assert.equal(aliasUse.recentRuns[0].runId, "run-1");
   assert.equal(aliasUse.lineage[0].lastRunId, "run-1");
+  assert.equal(aliasUse.requestedAlias, "main");
+  assert.equal(aliasUse.agentScoped, true);
+  assert.equal(aliasUse.agent.slug, "agent-a");
+  assert.equal(aliasUse.taskTitle, "Review task");
+  assert.equal(aliasUse.roomLabel, "main / agent-a / Review task");
 
   const fresh = recordFreshThread({
     aliasHint: "critic",

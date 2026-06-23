@@ -126,18 +126,22 @@ Treat ChatGPT conversations as rooms:
 - `critic`: fresh skeptical review with compressed context only
 - `scratch`: disposable prompt/context checks
 
-Use an existing alias when continuity matters. Use a new chat for clean critique,
-independent tasks, or health checks. Aliases are repo-owned. `main` means
-`main` for the current local repo project, not any tab or conversation globally
-named `main`.
+Use an existing logical alias when continuity matters. Use a new chat for clean
+critique, independent tasks, or health checks. Aliases are repo-owned and
+agent-scoped by default. `main` means this repo plus this Codex agent's main
+room, not a globally shared `main`.
 
 ChatGPT UI Projects are explicit browser targets, not the same thing as local
 repo project ids. Project URL priority is explicit `--project-url`, then
 `CHATGPT_PROJECT_URL`, then repo-local git config `chatgpt-pro.projectUrl`.
-When a Project URL is available with an alias, the daily default is to open a
-new conversation inside that ChatGPT Project and bind the alias to the new
-thread. Reuse the previous bound room only with `--reuse-room` /
-`--continue-room` or `CHATGPT_REUSE_ROOM=1`.
+When a Project URL is available, the wrapper resolves a logical alias to an
+effective agent-scoped alias. For example, `--alias=critic` may resolve to
+`critic--agent-019ed607-b441-7593-8c89`. Agent identity priority is
+`--agent-id`, `CHATGPT_AGENT_ID`, `CODEX_AGENT_ID`, `CODEX_THREAD_ID`,
+`CODEX_SESSION_ID`, then `AGENT_ID`. Reuse the previous bound room only with
+`--reuse-room` / `--continue-room` or `CHATGPT_REUSE_ROOM=1`. Use
+`--shared-room` only when multiple agents should deliberately share the exact
+same ChatGPT conversation.
 
 Room lifecycle commands:
 
@@ -163,21 +167,28 @@ Call thread modes:
 chatgpt-pro call --alias main
 ```
 
-Continue the active repo-owned room.
+Use this agent's active repo-owned main room.
 
 ```bash
 chatgpt-pro call --alias polymarket-lp --project-url https://chatgpt.com/g/...
 ```
 
 Open a new conversation inside that ChatGPT Project and bind `polymarket-lp` to
-the resulting thread. This is the daily advisor/reviewer default for Project
-work.
+this agent's effective room alias. This is the daily advisor/reviewer default
+for Project work.
 
 ```bash
 chatgpt-pro call --alias polymarket-lp --project-url https://chatgpt.com/g/... --reuse-room
 ```
 
-Reuse the previously bound Project conversation deliberately.
+Reuse this same agent's previously bound Project conversation deliberately.
+
+```bash
+chatgpt-pro call --alias polymarket-lp --shared-room --reuse-room
+```
+
+Deliberately use the exact shared `polymarket-lp` room across agents. This is
+not the default because it can mix unrelated tasks.
 
 ```bash
 chatgpt-pro call --alias critic --fresh
