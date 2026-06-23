@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import {
   PROJECT_SOURCE_INPUT_CANDIDATE_SELECTOR,
   PROJECT_SOURCE_TARGET_ATTR,
+  projectSourceEvidenceStatus,
 } from "../src/chatgpt-project-source.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -59,6 +60,27 @@ try {
   assert.doesNotMatch(projectSourceModule, /document\.querySelector(All)?\(["']input\[type=['"]file['"]\]["']\)/);
   assert.doesNotMatch(projectSourceModule, /"input\[type='file'\]",/);
   assert.match(projectSourceModule, /composerForm\.contains/);
+
+  const processing = projectSourceEvidenceStatus({
+    bodyText: "repo-context.abcd1234.md\nProcessing",
+    chips: [],
+  }, ["repo-context.abcd1234.md"]);
+  assert.equal(processing.ok, false);
+  assert.equal(processing.reason, "active_processing");
+
+  const duplicate = projectSourceEvidenceStatus({
+    bodyText: "You've already uploaded this file. Try uploading something new.",
+    chips: ["repo-context.abcd1234.md"],
+  }, ["repo-context.abcd1234.md"]);
+  assert.equal(duplicate.ok, false);
+  assert.equal(duplicate.reason, "error_observed");
+
+  const settled = projectSourceEvidenceStatus({
+    bodyText: "repo-context.abcd1234.md",
+    chips: [],
+  }, ["repo-context.abcd1234.md"]);
+  assert.equal(settled.ok, true);
+  assert.equal(settled.matchedBy, "visible_filename_settled");
 } finally {
   rmSync(repo, { recursive: true, force: true });
   rmSync(home, { recursive: true, force: true });

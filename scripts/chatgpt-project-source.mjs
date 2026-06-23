@@ -4,6 +4,10 @@ import { CdpSession, now, sleep } from "../src/cdp-client.mjs";
 import { newChatGptSession } from "../src/chatgpt-sessions.mjs";
 import { acquireChatGptOperation } from "../src/chatgpt-operation.mjs";
 import { uploadProjectSourceFiles } from "../src/chatgpt-project-source.mjs";
+import {
+  defaultUploadLedgerPath,
+  projectSourceUploadScopeKey,
+} from "../src/chatgpt-upload.mjs";
 import { writeJson } from "../src/observe.mjs";
 import { ensureProjectState } from "../src/project-state.mjs";
 import {
@@ -123,6 +127,11 @@ try {
 
   receipt.upload = await uploadProjectSourceFiles(cdp, sourceFiles, {
     stageDir: resolve(runDir, "project-source-uploads"),
+    ledgerPath: defaultUploadLedgerPath,
+    scopeKey: projectSourceUploadScopeKey({
+      projectId: project.projectId,
+      projectUrl,
+    }),
   });
   receipt.ok = true;
   receipt.completedAt = new Date().toISOString();

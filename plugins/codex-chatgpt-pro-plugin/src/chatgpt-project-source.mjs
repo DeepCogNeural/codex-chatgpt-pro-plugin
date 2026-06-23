@@ -1,6 +1,10 @@
 import { resolve } from "node:path";
 import { evaluate, sleep } from "./cdp-client.mjs";
-import { stageUploadFiles } from "./chatgpt-upload.mjs";
+import {
+  defaultUploadLedgerPath,
+  prepareUploadFiles,
+  recordUploadedFiles,
+} from "./chatgpt-upload.mjs";
 
 export const PROJECT_SOURCE_INPUT_CANDIDATE_SELECTOR = "input[type='file']:not(#upload-files)";
 export const PROJECT_SOURCE_TARGET_ATTR = "data-codex-project-source-target";
@@ -142,31 +146,71 @@ async function waitForSourceEvidence(cdp, files, { timeoutMs = 90_000 } = {}) {
         return { bodyText, chips };
       })()`,
     );
-    const haystack = [evidence.bodyText || "", ...(evidence.chips || [])].join("\n");
-    const visibleFileNames = names.filter((name) => haystack.includes(name));
-    lastEvidence = {
-      visibleFileNames,
-      chipCount: evidence.chips?.length || 0,
-      bodyTextChars: (evidence.bodyText || "").length,
-    };
-    if (visibleFileNames.length === names.length) {
-      return { ok: true, matchedBy: "visible_filename", evidence: lastEvidence };
-    }
-    if (/uploading|processing|indexing|adding/i.test(haystack)) {
+    const status = projectSourceEvidenceStatus(evidence, names);
+    lastEvidence = status.evidence;
+    if (status.ok) return status;
+    if (status.reason === "active_processing") {
       await sleep(1500);
       continue;
     }
+    if (status.reason === "error_observed") return status;
     await sleep(750);
   }
   return { ok: false, matchedBy: "timeout", evidence: lastEvidence };
 }
 
+export function projectSourceEvidenceStatus(evidence, names) {
+  const haystack = [evidence.bodyText || "", ...(evidence.chips || [])].join("\n");
+  const visibleFileNames = names.filter((name) => haystack.includes(name));
+  const activeProcessing = /uploading|processing|indexing|adding/i.test(haystack);
+  const errorObserved = /already uploaded this file|try uploading something new|upload failed|failed to upload|error uploading/i.test(haystack);
+  const redactedEvidence = {
+    visibleFileNames,
+    activeProcessing,
+    errorObserved,
+    chipCount: evidence.chips?.length || 0,
+    bodyTextChars: (evidence.bodyText || "").length,
+  };
+  if (errorObserved) {
+    return { ok: false, matchedBy: "error", reason: "error_observed", evidence: redactedEvidence };
+  }
+  if (activeProcessing) {
+    return { ok: false, matchedBy: "processing", reason: "active_processing", evidence: redactedEvidence };
+  }
+  if (visibleFileNames.length === names.length) {
+    return { ok: true, matchedBy: "visible_filename_settled", evidence: redactedEvidence };
+  }
+  return { ok: false, matchedBy: "not_visible", reason: "file_names_not_visible", evidence: redactedEvidence };
+}
+
 export async function uploadProjectSourceFiles(cdp, paths, {
   stageDir,
+  ledgerPath = defaultUploadLedgerPath,
+  scopeKey = "project-source|default",
+  skipKnownUploads = true,
   timeoutMs = 90_000,
 } = {}) {
-  const files = stageUploadFiles(paths, { stageDir });
-  if (!files.length) return { ok: true, files: [], inputSelector: null, evidence: null };
+  const prepared = prepareUploadFiles(paths, {
+    stageDir,
+    ledgerPath,
+    scopeKey,
+    skipKnown: skipKnownUploads,
+  });
+  const files = prepared.files;
+  if (!files.length) {
+    return {
+      ok: true,
+      files: [],
+      skipped: prepared.skipped,
+      inputSelector: null,
+      evidence: null,
+      ledger: {
+        path: prepared.ledgerPath,
+        scopeKey: prepared.scopeKey,
+        recorded: false,
+      },
+    };
+  }
 
   await cdp.send("DOM.enable").catch(() => {});
   const entrypoint = await clickUploadEntrypoint(cdp);
@@ -192,17 +236,21 @@ export async function uploadProjectSourceFiles(cdp, paths, {
   if (!evidence.ok) {
     throw projectSourceError("project_source.upload_not_observed", "Project source files were set, but uploaded file names were not observed.", {
       files,
+      skipped: prepared.skipped,
       entrypoint,
       inputSelector: input.selector,
       evidence,
     });
   }
+  const ledger = recordUploadedFiles(prepared, { uploadKind: "project-source" });
 
   return {
     ok: true,
     files,
+    skipped: prepared.skipped,
     entrypoint,
     inputSelector: input.selector,
     evidence,
+    ledger,
   };
 }

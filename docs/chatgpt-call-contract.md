@@ -97,6 +97,16 @@ button click. Run `npm run test:non-interference` before changing this path.
 The call path is text-only. It must not use ChatGPT voice, dictation,
 microphone, audio capture, or spoken commands.
 
+Upload dedupe is part of the contract. Successful uploads are recorded in
+`.devspace/state/chatgpt-upload-ledger.json`. Ordinary message attachments are
+scoped only by the actual ChatGPT conversation URL; if a new conversation does
+not have a `/c/...` URL yet, the call uploads normally and records the ledger
+only after the sent user message is verified. Project source uploads are scoped
+by Project URL. A later call with the same file content in the same scope must
+skip the upload and report it in `receipt.upload.skipped`; a changed file must
+stage under a filename containing the new content hash. Duplicate-file modals
+are treated as exception cleanup, not as normal control flow.
+
 ## Session Rooms
 
 Treat ChatGPT conversations as rooms:
@@ -195,6 +205,11 @@ automated yet; the command fails closed and asks for a manually created Project
 URL rather than guessing the current UI. It must not fall back to the ordinary
 ChatGPT message composer file input; if a safe Project source input cannot be
 found, the command fails closed.
+
+Project source uploads use the same local upload ledger, scoped by Project URL.
+If the content is already recorded for that Project, the command returns
+`ok: true` with `upload.skipped` rather than trying to upload the same source
+again.
 
 If the human pastes a ChatGPT conversation URL and asks Codex to work from that
 thread, bind it deliberately:
