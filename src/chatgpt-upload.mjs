@@ -304,10 +304,29 @@ export function stageUploadFiles(paths, { stageDir, stamp = utcFileStamp() } = {
   return prepareUploadFiles(paths, { stageDir, stamp, skipKnown: false }).files;
 }
 
+export function classifyUploadEvidence(evidence = {}, names = []) {
+  const matchedInChip = (name) => (evidence.chips || []).some((chip) =>
+    [chip.text, chip.aria, chip.testid].join("\n").includes(name),
+  );
+  const visibleFileNames = names.filter((name) => matchedInChip(name));
+  const haystack = [
+    evidence.formText || "",
+    ...(evidence.chips || []).flatMap((chip) => [chip.text, chip.aria, chip.testid]),
+  ].join("\n");
+  const duplicateUploadModal = Boolean(evidence.duplicateUploadModal);
+  return {
+    allVisible: names.every((name) => visibleFileNames.includes(name)),
+    duplicateUploadModal,
+    uploading: !duplicateUploadModal && /\b(uploading|processing|attaching|attached)\b/i.test(haystack),
+    visibleFileNames,
+  };
+}
+
 async function waitForUploadEvidence(cdp, files, { timeoutMs = 60_000 } = {}) {
   const names = files.map((file) => file.name);
   const startedAt = Date.now();
   let lastEvidence = null;
+  const duplicateUploadCleanup = [];
   while (Date.now() - startedAt < timeoutMs) {
     const evidence = await evaluate(
       cdp,
@@ -331,35 +350,36 @@ async function waitForUploadEvidence(cdp, files, { timeoutMs = 60_000 } = {}) {
           formText: (form?.innerText || "").slice(0, 1000),
           formRect: formRect ? { x: formRect.x, y: formRect.y, w: formRect.width, h: formRect.height } : null,
           chips,
+          duplicateUploadModal: /already uploaded this file|try uploading something new/i.test(document.body?.innerText || ""),
           inputFiles: input ? [...input.files].map((file) => ({ name: file.name, size: file.size })) : []
         };
       })()`,
     );
-    const haystack = [
-      evidence.formText || "",
-      ...(evidence.chips || []).flatMap((chip) => [chip.text, chip.aria, chip.testid]),
-    ].join("\n");
-    const matchedInChip = (name) => (evidence.chips || []).some((chip) =>
-      [chip.text, chip.aria, chip.testid].join("\n").includes(name),
-    );
+    const state = classifyUploadEvidence(evidence, names);
     const redactedEvidence = {
       chips: evidence.chips || [],
       inputFiles: evidence.inputFiles || [],
-      visibleFileNames: names.filter((name) => matchedInChip(name)),
+      visibleFileNames: state.visibleFileNames,
+      duplicateUploadModal: state.duplicateUploadModal,
       formTextSha256: textSha256(evidence.formText || ""),
       formTextChars: (evidence.formText || "").length,
       formRect: evidence.formRect || null,
     };
     lastEvidence = redactedEvidence;
-    if (names.every((name) => matchedInChip(name))) {
+    if (state.duplicateUploadModal) {
+      const dismissed = await dismissDuplicateUploadDialog(cdp);
+      duplicateUploadCleanup.push(dismissed);
+      if (dismissed.dismissed) await sleep(750);
+    }
+    if (state.allVisible) {
       return {
         ok: true,
         matchedBy: "visible_filename",
         evidence: redactedEvidence,
+        cleanup: { duplicateUploadDialog: duplicateUploadCleanup },
       };
     }
-    const uploading = /uploading|processing|attached|file/i.test(haystack);
-    if (uploading) {
+    if (state.uploading) {
       await sleep(1000);
       continue;
     }
@@ -369,6 +389,7 @@ async function waitForUploadEvidence(cdp, files, { timeoutMs = 60_000 } = {}) {
     ok: false,
     matchedBy: "timeout",
     evidence: lastEvidence,
+    cleanup: { duplicateUploadDialog: duplicateUploadCleanup },
   };
 }
 
@@ -423,6 +444,8 @@ export async function uploadFiles(cdp, paths, {
     })()`,
   ).catch(() => {});
   const evidence = await waitForUploadEvidence(cdp, files, { timeoutMs });
+  const postUploadDuplicateDialog = await dismissDuplicateUploadDialog(cdp);
+  if (postUploadDuplicateDialog.dismissed) await sleep(750);
   if (!evidence.ok) {
     throw uploadError("input.attachment_upload_failed", "Files were set on the ChatGPT file input, but upload chips were not observed.", {
       files,
@@ -435,7 +458,11 @@ export async function uploadFiles(cdp, paths, {
     inputSelector: input.selector,
     files,
     skipped: prepared.skipped,
-    cleanup,
+    cleanup: {
+      ...cleanup,
+      duplicateUploadDialogDuringUpload: evidence.cleanup?.duplicateUploadDialog || [],
+      postUploadDuplicateDialog,
+    },
     evidence,
     ledger: {
       path: prepared.ledgerPath,

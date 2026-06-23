@@ -295,8 +295,10 @@ content was already uploaded in that scope, the next call skips the upload and
 reports `receipt.upload.skipped`; if content changed, the staged filename
 includes the new content hash. At call start, after confirming ChatGPT is not
 actively generating, the wrapper also dismisses stale duplicate-upload modals
-and removes stale composer attachments left by older failed runs. Do not retry,
-reload, or interrupt ChatGPT to handle duplicate file modals.
+and removes stale composer attachments left by older failed runs. During and
+after upload, it checks again for the duplicate-upload modal and dismisses it so
+the modal cannot block the composer or send button. Do not retry, reload, or
+interrupt ChatGPT to handle duplicate file modals.
 If the modal appears outside a normal `call`, run
 `chatgpt-pro cleanup duplicate-upload`.
 

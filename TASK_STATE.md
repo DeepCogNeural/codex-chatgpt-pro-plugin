@@ -170,3 +170,30 @@ Give agents a one-command escape hatch when ChatGPT shows `You've already upload
 - `node --check scripts/chatgpt-cleanup.mjs src/chatgpt-cleanup.mjs bin/chatgpt-pro`: passed.
 - Refreshed installed Codex plugin cache with `/Users/linghao/.local/bin/codex --enable plugins plugin add codex-chatgpt-pro-plugin@codex-chatgpt-pro-plugin`.
 - Installed-cache no-prompt smoke: `/Users/linghao/.codex/plugins/cache/codex-chatgpt-pro-plugin/codex-chatgpt-pro-plugin/0.1.0/bin/chatgpt-pro cleanup duplicate-upload` scanned 13 ChatGPT tabs and returned `cleaned: 0`.
+
+## 2026-06-23 Upload-Path Duplicate Modal Auto Cleanup
+
+### Goal
+
+Handle duplicate-upload modals inside the normal upload flow, not only through a manual cleanup command.
+
+### Fix
+
+- Kept the upstream prevention layer: upload ledger skips same content in the same valid scope, and staged filenames include the original content hash.
+- Added upload evidence classification so the upload loop can distinguish a duplicate-upload modal from a real uploading/processing state.
+- During upload evidence polling, if ChatGPT shows the duplicate-upload modal, the wrapper dismisses only that modal and keeps waiting for upload evidence.
+- After upload evidence is collected, the wrapper checks for the duplicate-upload modal once more and dismisses it so it cannot cover the composer or send button.
+- Upload receipts now include `cleanup.duplicateUploadDialogDuringUpload` and `cleanup.postUploadDuplicateDialog`.
+- Fixed a classification edge case where `already uploaded` / `Try uploading something new` was incorrectly treated as an active uploading state.
+
+### Verification
+
+- RED: `npm run test:upload-metadata` failed because `classifyUploadEvidence` did not exist.
+- GREEN: `npm run test:upload-metadata`: passed.
+- `npm run test:cleanup-duplicate-upload`: passed.
+- `npm run test:package-surface`: passed.
+- `npm run test:non-interference`: passed.
+- `npm run plugin:sync`: passed.
+- `npm run test:deterministic`: passed.
+- `git diff --check`: passed.
+- `node --check src/chatgpt-upload.mjs scripts/upload-metadata-selftest.mjs`: passed.

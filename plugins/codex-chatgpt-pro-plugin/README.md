@@ -150,7 +150,9 @@ includes the new content hash, so ChatGPT sees a new version. Agents should not
 solve duplicate modals by retrying, reloading, or interrupting a running answer.
 At call start, after confirming ChatGPT is not actively generating, the wrapper
 also dismisses stale duplicate-upload modals and removes stale composer
-attachments left by older failed runs.
+attachments left by older failed runs. During and after file upload, it checks
+again for the duplicate-upload modal and dismisses it so the modal cannot cover
+the composer or send button.
 If an agent sees the duplicate-upload modal outside a normal call, run
 `chatgpt-pro cleanup duplicate-upload`. It scans visible ChatGPT tabs and clicks
 only the duplicate modal OK button; if ChatGPT is still thinking, it does not
