@@ -147,6 +147,11 @@ function normalizeRoom(name, saved = {}, project = ensureProjectState()) {
     projectId: saved.projectId || project.projectId,
     repoRoot: saved.repoRoot || project.repoRoot,
     projectDisplayName: saved.projectDisplayName || project.displayName,
+    requestedAlias: saved.requestedAlias || name,
+    agentScoped: saved.agentScoped === true,
+    agent: saved.agent || null,
+    taskTitle: saved.taskTitle || "",
+    roomLabel: saved.roomLabel || "",
     purpose: roomPurpose(name, saved, project),
     lifecycle: roomLifecycle(name, saved),
     activeThreadId,
@@ -758,7 +763,7 @@ export function recordFreshThread({ aliasHint, target, runId, receiptPath, trans
   });
 }
 
-export function recordChatGptAliasUse({ name, target, runId, receiptPath, transcriptPath } = {}) {
+export function recordChatGptAliasUse({ name, target, runId, receiptPath, transcriptPath, agentRoom = null } = {}) {
   if (!name) return null;
   const project = ensureProjectState();
   return withProjectStateLockSync({ project, reason: `record-alias-use:${name}` }, () => {
@@ -785,6 +790,11 @@ export function recordChatGptAliasUse({ name, target, runId, receiptPath, transc
       : entry);
     registry.rooms[name] = {
       ...saved,
+      requestedAlias: agentRoom?.requestedAlias || saved.requestedAlias || name,
+      agentScoped: agentRoom ? agentRoom.scoped : saved.agentScoped || false,
+      agent: agentRoom?.agent || saved.agent || null,
+      taskTitle: agentRoom?.taskTitle || saved.taskTitle || "",
+      roomLabel: agentRoom?.roomLabel || saved.roomLabel || "",
       targetId: target?.id || saved.targetId || null,
       activeThreadId,
       activeConversationUrl,

@@ -328,17 +328,21 @@ history is loaded.
 
 ## Repo-Scoped Rooms
 
-Aliases are owned by the current repo. Before using a room alias, the wrapper
-checks `.devspace/state/chatgpt-project.json`, the git-level
+Aliases are owned by the current repo and are agent-scoped by default. Before
+using a room alias, the wrapper checks `.devspace/state/chatgpt-project.json`, the git-level
 `chatgpt-pro.projectId`, and the canonical session registry:
 
 ```text
 ~/.chatgpt-pro-codex/projects/<projectId>/chatgpt-sessions.json
 ```
 
-Linked git worktrees share the same project id and therefore the same rooms.
-Separate git repositories get separate project ids. Non-git folders fall back
-to a realpath-derived project id.
+Linked git worktrees share the same project id. Separate git repositories get
+separate project ids. Non-git folders fall back to a realpath-derived project
+id. A logical alias such as `critic` becomes an effective room alias such as
+`critic--agent-<codex-thread>` unless `--shared-room` or
+`CHATGPT_SHARED_ROOM=1` is set. Agent identity priority is `--agent-id`,
+`CHATGPT_AGENT_ID`, `CODEX_AGENT_ID`, `CODEX_THREAD_ID`, `CODEX_SESSION_ID`,
+then `AGENT_ID`.
 
 Room policy:
 
@@ -371,23 +375,27 @@ operation verifies or repairs the target.
 Thread modes:
 
 ```bash
-chatgpt-pro call --alias=main --prompt="..."       # continue repo-owned main
+chatgpt-pro call --alias=main --prompt="..."       # use this agent's main room
 chatgpt-pro call --alias=critic --fresh --prompt="..." # new unbound thread, alias hint only
 chatgpt-pro call --alias=critic --new --prompt="..."   # new thread bound to critic
 chatgpt-pro call --alias=main --rebind-alias --conversation-url=https://chatgpt.com/c/... --prompt="..."
 ```
 
 `--fresh` must not mutate the alias. `--new` requires an alias and moves that
-alias to the newly opened thread while preserving lineage. `--rebind-alias`
-points an alias at an already-open conversation. Prefer the `rooms` commands
-when you need to create, rebind, or repair room state without sending a prompt;
-the `call` flags are send-and-mutate shortcuts.
+agent-scoped alias to the newly opened thread while preserving lineage.
+`--rebind-alias` points an alias at an already-open conversation. Prefer the
+`rooms` commands when you need to create, rebind, or repair room state without
+sending a prompt; the `call` flags are send-and-mutate shortcuts.
 
-For normal multi-agent use, do not open a new tab on every call. Create or bind
-a repo-owned room once, then keep using that alias:
+Use `--shared-room` only when multiple Codex agents should deliberately share
+the exact same ChatGPT conversation. Without `--shared-room`, different Codex
+agents must not reuse each other's room even when they pass the same
+`--alias=main` or `--alias=critic`.
+
+For normal multi-agent use, do not open a new tab on every call. Use a stable
+logical alias; the wrapper will route it to this agent's own effective room:
 
 ```bash
-chatgpt-pro rooms new --alias=critic
 chatgpt-pro call --alias=critic --prompt-file=next-review.md
 ```
 

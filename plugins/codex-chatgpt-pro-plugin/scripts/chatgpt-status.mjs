@@ -1,4 +1,5 @@
 import { buildChatGptStatus } from "../src/chatgpt-status.mjs";
+import { resolveAgentRoom } from "../src/agent-room-policy.mjs";
 
 function arg(name) {
   const prefix = `--${name}=`;
@@ -6,7 +7,17 @@ function arg(name) {
   return hit ? hit.slice(prefix.length) : null;
 }
 
-const alias = arg("alias") || arg("session") || process.env.CHATGPT_SESSION || "main";
+function flag(name) {
+  return process.argv.includes(`--${name}`);
+}
+
+const requestedAlias = arg("alias") || arg("session") || process.env.CHATGPT_SESSION || "main";
+const agentRoom = resolveAgentRoom({
+  requestedAlias,
+  explicitAgentId: arg("agent-id") || process.env.CHATGPT_AGENT_ID || "",
+  sharedRoom: flag("shared-room") || /^(1|true|yes)$/i.test(process.env.CHATGPT_SHARED_ROOM || ""),
+});
+const alias = agentRoom.effectiveAlias;
 
 try {
   if (process.argv.includes("--live")) {
@@ -14,7 +25,15 @@ try {
     error.errorCode = "mode.unsupported";
     throw error;
   }
-  console.log(JSON.stringify(buildChatGptStatus({ alias }), null, 2));
+  console.log(JSON.stringify({
+    ...buildChatGptStatus({ alias }),
+    roomResolution: {
+      alias,
+      requestedAlias: agentRoom.requestedAlias || null,
+      agentScoped: agentRoom.scoped,
+      agent: agentRoom.agent,
+    },
+  }, null, 2));
 } catch (error) {
   console.log(JSON.stringify({
     ok: false,

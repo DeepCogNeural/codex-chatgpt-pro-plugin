@@ -25,6 +25,8 @@ assert.match(skill, /chatgpt-pro rooms new --alias=critic/);
 assert.match(skill, /chatgpt-pro rooms rebind --alias=spec/);
 assert.match(skill, /chatgpt-pro rooms repair --alias=main/);
 assert.match(skill, /chatgpt-pro cleanup duplicate-upload/);
+assert.match(skill, /--shared-room/);
+assert.match(skill, /CODEX_THREAD_ID/);
 assert.equal(pluginSkill, skill);
 
 const readme = readFileSync("README.md", "utf8");
@@ -33,6 +35,8 @@ assert.match(readme, /chatgpt-pro status --alias=main/);
 assert.match(readme, /chatgpt-pro rooms rebind --alias=spec/);
 assert.match(readme, /chatgpt-pro rooms repair --alias=main/);
 assert.match(readme, /chatgpt-pro cleanup duplicate-upload/);
+assert.match(readme, /CHATGPT_AGENT_ID/);
+assert.match(readme, /CHATGPT_SHARED_ROOM=1/);
 assert.match(readme, /npm run test:v1/);
 assert.match(readme, /npm run test:live/);
 assert.match(readme, /`npm test`: runs deterministic tests only/);

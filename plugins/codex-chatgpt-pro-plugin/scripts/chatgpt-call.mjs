@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { CdpSession, connectToPage, now, sleep } from "../src/cdp-client.mjs";
+import { CdpSession, connectToPage, evaluate, now, sleep } from "../src/cdp-client.mjs";
 import {
   AUTH_LOGIN_REQUIRED,
   exitCodeForReceipt,
@@ -65,6 +65,7 @@ import {
   resolveThreadPolicy,
 } from "../src/chatgpt-call-policy.mjs";
 import { configuredChatGptProjectUrl } from "../src/git-config.mjs";
+import { resolveAgentRoom } from "../src/agent-room-policy.mjs";
 
 function arg(name) {
   const prefix = `--${name}=`;
@@ -206,7 +207,15 @@ async function main() {
     configuredProjectUrl: configuredChatGptProjectUrl(),
   });
   const targetUrl = chatGptProjectUrl || process.env.BROWSER_TARGET_URL || DEFAULT_TARGET_URL;
-  const session = arg("session") || arg("alias") || process.env.CHATGPT_SESSION || "";
+  const promptInput = buildPrompt();
+  const requestedSession = arg("session") || arg("alias") || process.env.CHATGPT_SESSION || (chatGptProjectUrl ? "main" : "");
+  const agentRoom = resolveAgentRoom({
+    requestedAlias: requestedSession,
+    explicitAgentId: arg("agent-id") || process.env.CHATGPT_AGENT_ID || "",
+    sharedRoom: flag("shared-room") || boolEnv("CHATGPT_SHARED_ROOM"),
+    taskTitle: arg("task-title") || process.env.CHATGPT_TASK_TITLE || promptInput.prompt,
+  });
+  const session = agentRoom.effectiveAlias;
   const freshThread = flag("fresh");
   const requestedNewBoundThread = flag("new") || flag("new-thread");
   const reuseRoom = flag("reuse-room") || flag("continue-room") || boolEnv("CHATGPT_REUSE_ROOM");
@@ -239,7 +248,6 @@ async function main() {
   const noWaitForLock = flag("no-wait");
   const staleLockTtlMs = Number(arg("stale-lock-ttl-ms") || process.env.CHATGPT_STALE_LOCK_TTL_MS || 900_000);
   const port = Number(process.env.CHROME_REMOTE_DEBUGGING_PORT || DEFAULT_CDP_PORT);
-  const promptInput = buildPrompt();
   const project = ensureProjectState();
 
   const runId = `${makeRunId()}-chatgpt-call`;
@@ -278,9 +286,14 @@ async function main() {
     session: session || null,
     room: {
       alias: session || null,
+      requestedAlias: agentRoom.requestedAlias || null,
       threadMode,
       aliasBound: threadPolicy.aliasBound,
       conversationUrl: conversationUrl || null,
+      agentScoped: agentRoom.scoped,
+      agent: agentRoom.agent,
+      taskTitle: agentRoom.taskTitle,
+      roomLabel: agentRoom.roomLabel || null,
     },
     automation: {
       inputMode: "text",
@@ -592,6 +605,14 @@ async function main() {
       finishDetectedBy: response.finishDetectedBy,
       conversationUrl: response.probe?.url || null,
     };
+    if (agentRoom.roomLabel) {
+      receipt.browserTabLabel = await step(receipt, "label-browser-tab", () =>
+        evaluate(cdp, `(label => {
+          document.title = label;
+          return { title: document.title };
+        })(${JSON.stringify(agentRoom.roomLabel)})`),
+      );
+    }
     finalConversationUrl = response.probe?.url || null;
     if (connectedTarget && finalConversationUrl) {
       connectedTarget = { ...connectedTarget, url: finalConversationUrl };
@@ -663,6 +684,7 @@ async function main() {
           runId,
           receiptPath: resolve(runDir, "receipt.json"),
           transcriptPath: resolve(runDir, "transcript.md"),
+          agentRoom,
         });
         receipt.aliasRecord = aliasRecord;
       } catch (error) {

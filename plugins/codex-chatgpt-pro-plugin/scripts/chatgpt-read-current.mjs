@@ -21,6 +21,7 @@ import {
   resolveChatGptProjectTarget,
 } from "../src/chatgpt-call-policy.mjs";
 import { configuredChatGptProjectUrl } from "../src/git-config.mjs";
+import { resolveAgentRoom } from "../src/agent-room-policy.mjs";
 
 function sha256(text) {
   return createHash("sha256").update(text).digest("hex");
@@ -42,7 +43,13 @@ const chatGptProjectUrl = resolveChatGptProjectTarget({
   configuredProjectUrl: configuredChatGptProjectUrl(),
 });
 const targetUrl = chatGptProjectUrl || process.env.BROWSER_TARGET_URL || DEFAULT_TARGET_URL;
-const session = arg("session") || arg("alias") || process.env.CHATGPT_SESSION || "";
+const requestedSession = arg("session") || arg("alias") || process.env.CHATGPT_SESSION || "";
+const agentRoom = resolveAgentRoom({
+  requestedAlias: requestedSession,
+  explicitAgentId: arg("agent-id") || process.env.CHATGPT_AGENT_ID || "",
+  sharedRoom: flag("shared-room") || /^(1|true|yes)$/i.test(process.env.CHATGPT_SHARED_ROOM || ""),
+});
+const session = agentRoom.effectiveAlias;
 const responseTimeoutMs = Number(process.env.CHATGPT_RESPONSE_TIMEOUT_MS || 480_000);
 const stableMs = Number(process.env.CHATGPT_RESPONSE_STABLE_MS || 5_000);
 const completionMarker = completionMarkerFromEnv({ explicitMarker: arg("completion-marker") });
@@ -65,6 +72,12 @@ const receipt = {
   loop: "chatgpt-read-current",
   target: targetUrl,
   session: session || null,
+  room: {
+    alias: session || null,
+    requestedAlias: agentRoom.requestedAlias || null,
+    agentScoped: agentRoom.scoped,
+    agent: agentRoom.agent,
+  },
   project,
   startedAt: new Date().toISOString(),
   responseTimeoutMs,

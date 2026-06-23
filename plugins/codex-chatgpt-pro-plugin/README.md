@@ -35,10 +35,10 @@ Don't spend the line on trivial syntax checks.
 
 ## Major features
 
-- **Repo-scoped rooms.** ChatGPT conversations are bound to your git repo as
-  named rooms (`main`, `debug`, `critic`, `scratch`). Linked worktrees share a
-  repo's rooms; separate repos stay isolated. `main` means *this* repo's main —
-  never some other tab.
+- **Repo- and agent-scoped rooms.** ChatGPT conversations are bound to your git
+  repo and, by default, to the calling Codex agent. A logical alias such as
+  `critic` becomes an effective room like `critic--agent-<codex-thread>`, so two
+  agents do not reuse each other's ChatGPT conversation by accident.
 - **Repo-as-context, in one file.** Generates a repomix-style `repo-context.md`
   monofile (source tree, LOC, file bodies, line-range source map, hashes), blocks
   secret-like paths/content before writing it, and uploads it only after explicit
@@ -87,11 +87,14 @@ chatgpt-pro call --alias=main --confirm-repo-context-upload --prompt="Review thi
 # Configure this repo once so agents do not need to remember the Project URL
 git config --local chatgpt-pro.projectUrl https://chatgpt.com/g/...
 
-# Daily advisor flow: uses the configured ChatGPT Project and starts a new conversation there by default
+# Daily advisor flow: uses the configured ChatGPT Project and this agent's own room
 chatgpt-pro call --alias=polymarket-lp --prompt-file=advisor.md
 
-# Explicitly reuse the previous bound room only when continuity is intended
+# Explicitly reuse this same agent's previous bound room only when continuity is intended
 chatgpt-pro call --alias=polymarket-lp --reuse-room --prompt-file=follow-up.md
+
+# Deliberately share the exact alias across agents only when that is intended
+chatgpt-pro call --alias=polymarket-lp --shared-room --reuse-room --prompt-file=follow-up.md
 
 # Inspect repo room / lock / cache state without touching the browser
 chatgpt-pro status --alias=main
@@ -129,9 +132,12 @@ reload, retry, resend, or type over the active run.
 
 Project URL priority is explicit `--project-url`, then `CHATGPT_PROJECT_URL`,
 then the repo-local git config `chatgpt-pro.projectUrl`. When a Project URL is
-available with an alias, `call` opens a new conversation inside that ChatGPT
-Project and binds the alias to the new thread by default. Use `--reuse-room`
-only when you deliberately want the previous bound conversation.
+available, `call` uses a logical alias such as `main` or `polymarket-lp`, then
+scopes it by agent identity. Agent identity priority is `--agent-id`, then
+`CHATGPT_AGENT_ID`, then Codex thread/session environment variables such as
+`CODEX_THREAD_ID`. The room registry records the requested alias, effective
+alias, agent id, task title, and concise room label. Use `--shared-room` only
+when multiple agents should deliberately use the exact same ChatGPT room.
 
 Generated `repo-context.md` is secret-scanned and requires
 `--confirm-repo-context-upload` or
@@ -246,7 +252,8 @@ Common runtime switches: `BROWSER_POSTURE=headed|headless`,
 `CHATGPT_DEFAULT_LEVEL` (default `Pro Extended,Pro`),
 `CHATGPT_COMPLETION_MARKER` (default `输出完毕`),
 `CHATGPT_REQUIRE_COMPLETION_MARKER=0` only for transport debugging,
-`CHATGPT_PROJECT_URL`, `CHATGPT_RESPONSE_TIMEOUT_MS` (default `240000`),
+`CHATGPT_PROJECT_URL`, `CHATGPT_AGENT_ID`, `CHATGPT_SHARED_ROOM=1`,
+`CHATGPT_TASK_TITLE`, `CHATGPT_RESPONSE_TIMEOUT_MS` (default `240000`),
 `CHATGPT_REPO_CONTEXT_MODE=auto|upload|inline|off`,
 `CHATGPT_CONFIRM_REPO_CONTEXT_UPLOAD=1`, `CHATGPT_LOCK_TIMEOUT_MS`
 (default `600000`), `BROWSER_OBSERVER=1` (print a run-inspector URL). See the
