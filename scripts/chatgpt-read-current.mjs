@@ -1,10 +1,15 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { connectToPage, now } from "../src/cdp-client.mjs";
+import { now } from "../src/cdp-client.mjs";
 import { pageProbe, redactedProbe } from "../src/chatgpt-page.mjs";
-import { waitForAssistantResponse } from "../src/chatgpt-composer.mjs";
+import { waitForAssistantResponseAfterUser } from "../src/chatgpt-composer.mjs";
 import { connectToChatGptSession, recordChatGptAliasUse } from "../src/chatgpt-sessions.mjs";
+import {
+  resolveUserMessageAnchor,
+  snapshotConversationMessages,
+} from "../src/chatgpt-messages.mjs";
+import { latestCallAnchorFromRoom } from "../src/chatgpt-read-recovery.mjs";
 import { acquireChatGptOperation } from "../src/chatgpt-operation.mjs";
 import { writeJson } from "../src/observe.mjs";
 import { ensureProjectState } from "../src/project-state.mjs";
@@ -18,6 +23,7 @@ import { sealRunEnvelope, threadEchoMode } from "../src/chatgpt/run-envelope.mjs
 import {
   completionMarkerFromEnv,
   completionMarkerRequired,
+  markAliasRecordFailure,
   resolveChatGptProjectTarget,
 } from "../src/chatgpt-call-policy.mjs";
 import { configuredChatGptProjectUrl } from "../src/git-config.mjs";
@@ -29,8 +35,15 @@ function sha256(text) {
 
 function arg(name) {
   const prefix = `--${name}=`;
-  const hit = process.argv.find((value) => value.startsWith(prefix));
-  return hit ? hit.slice(prefix.length) : null;
+  for (let index = 2; index < process.argv.length; index += 1) {
+    const value = process.argv[index];
+    if (value.startsWith(prefix)) return value.slice(prefix.length);
+    if (value === `--${name}`) {
+      const next = process.argv[index + 1];
+      return next && !next.startsWith("--") ? next : "";
+    }
+  }
+  return null;
 }
 
 function flag(name) {
@@ -44,6 +57,10 @@ const chatGptProjectUrl = resolveChatGptProjectTarget({
 });
 const targetUrl = chatGptProjectUrl || process.env.BROWSER_TARGET_URL || DEFAULT_TARGET_URL;
 const requestedSession = arg("session") || arg("alias") || process.env.CHATGPT_SESSION || "";
+if (!requestedSession) {
+  console.error("chatgpt-pro read requires --alias=<name> and --task-id=<id>. It will not read the current browser target implicitly.");
+  process.exit(2);
+}
 const agentRoom = resolveAgentRoom({
   requestedAlias: requestedSession,
   explicitAgentId: arg("agent-id") || process.env.CHATGPT_AGENT_ID || "",
@@ -112,7 +129,7 @@ try {
   receipt.lock = receipt.locks.browser.receipt;
 
   if (session) {
-    const connected = await connectToChatGptSession(port, session);
+    const connected = await connectToChatGptSession(port, session, { agentRoom });
     cdp = connected.cdp;
     connectedTarget = connected.target;
     receipt.sessionTarget = {
@@ -121,8 +138,7 @@ try {
       url: connected.target.url,
     };
     receipt.roomTarget = connected.roomTarget || null;
-  } else {
-    cdp = await connectToPage(port, { matchUrl: targetUrl });
+    receipt.boundRoom = connected.room || null;
   }
   await cdp.send("Runtime.enable");
   await cdp.send("DOM.enable");
@@ -130,12 +146,38 @@ try {
   const before = await pageProbe(cdp);
   writeJson(resolve(runDir, "initial-probe.json"), redactedProbe(before));
 
-  const response = await waitForAssistantResponse(cdp, Math.max(0, before.assistantTurns.length - 1), {
+  const callAnchor = latestCallAnchorFromRoom(receipt.boundRoom);
+  if (!callAnchor) {
+    const error = new Error("No anchored ChatGPT call receipt found for this room. Refusing to read an unbound current answer.");
+    error.errorCode = "response.user_anchor_missing";
+    error.details = {
+      alias: session,
+      lastReceiptPath: receipt.boundRoom?.lastReceiptPath || null,
+      recentRunCount: Array.isArray(receipt.boundRoom?.recentRuns) ? receipt.boundRoom.recentRuns.length : 0,
+    };
+    throw error;
+  }
+  const currentMessages = await snapshotConversationMessages(cdp);
+  const anchoredUserMessage = resolveUserMessageAnchor(currentMessages, callAnchor.sentUserMessage);
+  receipt.messageAnchor = {
+    recoveredFromReceiptPath: callAnchor.receiptPath,
+    recoveredFromRunId: callAnchor.runId,
+    sentUserMessage: {
+      ordinal: anchoredUserMessage.ordinal,
+      textSha256: anchoredUserMessage.textSha256,
+      normalizedTextSha256: anchoredUserMessage.normalizedTextSha256,
+      charCount: anchoredUserMessage.charCount,
+    },
+    responseBoundToSentPrompt: false,
+  };
+
+  const response = await waitForAssistantResponseAfterUser(cdp, anchoredUserMessage, {
     timeoutMs: responseTimeoutMs,
     stableMs,
     requireCompletionMarker,
     completionMarker,
   });
+  receipt.messageAnchor.responseBoundToSentPrompt = true;
   assistantText = response.assistantText;
   writeFileSync(resolve(runDir, "assistant.md"), assistantText, { mode: 0o600 });
   const finalConversationUrl = response.probe?.url || before.url;
@@ -153,6 +195,7 @@ try {
       textSha256: sha256(response.assistantText),
       charCount: response.assistantText.length,
       finishDetectedBy: response.finishDetectedBy,
+      afterUserOrdinal: anchoredUserMessage.ordinal,
     },
     stableMs: response.stableMs,
     totalMs: Math.round(now() - started),
@@ -171,12 +214,15 @@ try {
         transcriptPath: resolve(runDir, "transcript.md"),
         agentRoom,
       });
+      if (!receipt.aliasRecord) {
+        markAliasRecordFailure(receipt, null, {
+          errorCode: "session.alias_update_failed_after_response",
+        });
+      }
     } catch (error) {
-      receipt.aliasRecordError = {
-        errorCode: error?.errorCode || "session.alias_update_failed",
-        error: String(error?.message || error),
-        ...(error?.details ? { details: error.details } : {}),
-      };
+      markAliasRecordFailure(receipt, error, {
+        errorCode: "session.alias_update_failed_after_response",
+      });
     }
   }
 } catch (error) {

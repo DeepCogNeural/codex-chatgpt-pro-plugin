@@ -246,9 +246,10 @@ tasks from sharing the same ChatGPT conversation by accident.
 - The default scope is now Codex task, not agent.
 - Effective aliases now include task identity:
   `<logical-alias>--task-<task-slug>--agent-<agent-slug>`.
-- Task identity priority is `--task-id`, `CHATGPT_TASK_ID`, `CODEX_TASK_ID`,
-  `CODEX_GOAL_ID`, `CODEX_THREAD_ID`, `CODEX_SESSION_ID`, then prompt/task
-  title hash.
+- Superseded on 2026-06-24: task identity priority is now `--task-id`,
+  `CHATGPT_TASK_ID`, `CODEX_TASK_ID`, `AGENT_TASK_ID`, `CODEX_THREAD_ID`,
+  `CODEX_SESSION_ID`, `CODEX_GOAL_ID`, then prompt/task title hash. Thread and
+  session ids are intentionally narrower than goal ids.
 - `--shared-room` remains the explicit escape hatch for intentionally sharing a
   conversation across tasks or agents.
 - Follow-up within the same task should pass the same `--task-id` plus
@@ -352,3 +353,193 @@ safe to call without touching the live browser.
 - Follow-up status confirmed the room registry now stores
   `https://chatgpt.com/g/g-p-6a35e91256988191b967fe33344b0f04-polymarket-lp/c/6a3b2fb1-1130-83ea-8709-34e6c2502103`
   instead of the Project home URL.
+
+## 2026-06-24 Multi-Agent Isolation Review Follow-Up
+
+### Goal
+
+Make the ChatGPT Pro line safe for several Codex agents working in parallel:
+local work may run concurrently, but live ChatGPT UI operations must queue, and
+agents must not accidentally share conversations, uploads, or timeout recovery
+state.
+
+### Findings
+
+- A read-only local review found the expected concurrency boundary: local and
+  registry-only commands can run in parallel; live browser operations are
+  serialized through the global browser-profile lock.
+- The adversarial review found three real isolation gaps:
+  - `CODEX_GOAL_ID` took priority over `CODEX_THREAD_ID`, so different child
+    threads under the same parent goal could resolve to the same effective
+    ChatGPT room.
+  - Message attachment upload scope recognized only `https://chatgpt.com/c/...`
+    and missed Project conversations shaped like
+    `https://chatgpt.com/g/<project>/c/...`, weakening dedupe in Project rooms.
+  - `call` wrote the final `/c/...` room binding only after full success. If a
+    prompt was sent and then response reading failed, recovery depended on the
+    original tab staying alive.
+
+### Fix
+
+- Task identity priority is now explicit task ids first, then
+  `CODEX_THREAD_ID` / `CODEX_SESSION_ID`, then the broader `CODEX_GOAL_ID`.
+  This keeps parallel child threads under one parent goal isolated by default.
+- Message upload scope now accepts both normal and Project conversation URLs:
+  `https://chatgpt.com/c/...` and `https://chatgpt.com/g/<project>/c/...`.
+- `chatgpt-pro call` captures the real conversation URL immediately after the
+  user message is verified and records the alias if the run later fails after
+  the message was sent or the assistant started.
+- CLI help, README, and skill docs now also state that non-Project first-time
+  alias calls need `--new`; Project-scoped calls still create a new bound
+  conversation by default.
+
+### Verification
+
+- RED: `node scripts/agent-room-policy-selftest.mjs` failed because same
+  `CODEX_GOAL_ID` + different `CODEX_THREAD_ID` produced the same alias.
+- GREEN: `npm run test:agent-room-policy`: passed.
+- `npm run test:upload-metadata`: passed.
+- `npm run test:call-policy`: passed.
+- `npm run test:cli-help`: passed.
+- `npm run test:package-surface`: passed.
+- `npm run test:deterministic`: passed.
+- `node --check scripts/chatgpt-call.mjs src/chatgpt-call-policy.mjs
+  src/chatgpt-upload.mjs scripts/agent-room-policy-selftest.mjs
+  scripts/upload-metadata-selftest.mjs scripts/call-policy-selftest.mjs`:
+  passed.
+
+## 2026-06-24 - ChatGPT final review follow-up: recovery and upgrade safety
+
+### Goal
+
+Close the remaining P1 issues from ChatGPT Pro review for parallel Codex agents:
+timeout recovery must bind to the original sent prompt, old task-scoped aliases
+must survive the new hash alias format, and registry write failure after a sent
+prompt must not be reported as success.
+
+### Findings
+
+- ChatGPT Pro review returned `NEEDS_CHANGES` with no P0 and three P1 findings.
+- `chatgpt-pro read` still used a generic latest-assistant read path, which
+  could return an old answer if a new prompt was sent but no new assistant answer
+  had started yet.
+- The hash alias format changed existing effective aliases, but old registry
+  keys were exact-match only.
+- `recordChatGptAliasUse()` returning null or throwing after a sent prompt did
+  not force a non-zero receipt.
+
+### Fix
+
+- `read` now recovers the latest `chatgpt-pro call` receipt for the bound room,
+  resolves the saved `messageAnchor.sentUserMessage` by ordinal/hash in the
+  current conversation, and waits only for the assistant run after that user
+  message. Missing, mismatched, or ambiguous anchors fail closed.
+- Session registry lookup/write can migrate an older task-scoped key to the new
+  hash alias only when `requestedAlias + task.id + agent.id + projectId` has one
+  unique match. Ambiguity fails closed.
+- After a prompt is sent, alias registry update failure or empty writeback now
+  sets `ok: false`, `doNotResend: true`, and keeps the recovery
+  `conversationUrl`.
+- README, contract docs, and the ChatGPT Pro skill now state that `read` is
+  anchored to the previous call receipt and that effective aliases include hash
+  suffixes.
+
+### Verification
+
+- RED then GREEN: `npm run test:message-anchor`.
+- RED then GREEN: `npm run test:session-lineage`.
+- RED then GREEN: `npm run test:call-policy`.
+
+## 2026-06-24 - ChatGPT final review follow-up: fresh/read race/send status
+
+### Goal
+
+Close the second ChatGPT Pro review's P1 findings for no-pollution multi-agent
+operation.
+
+### Findings
+
+- ChatGPT Pro review confirmed the prior three P1s were closed, then found three
+  new P1 paths:
+  - `--fresh` calls that sent a prompt and later timed out could fall into alias
+    writeback and move the active alias to a one-off fresh conversation.
+  - A queued `read` could see a newly published registry pointer before that
+    call's receipt was persisted, skip the missing receipt, and read an older
+    call's answer.
+  - The new `Message Not Sent` heading was too coarse for send-click-success but
+    user-message-anchor-verification failure.
+
+### Fix
+
+- `shouldRecordAliasUseAfterCall(..., { freshThread: true })` now returns false;
+  sent fresh calls record only `freshThreads` recovery metadata.
+- `chatgpt-pro call` writes a preliminary valid receipt before publishing alias
+  or fresh-thread registry updates and before releasing the browser lock.
+- `chatgpt-pro read` now uses `src/chatgpt-read-recovery.mjs`; the latest call
+  receipt being missing/unreadable is a hard failure, not permission to fall
+  back to an older call.
+- Thread echo now has three states: `Message Sent To ChatGPT Pro`,
+  `Message Not Sent To ChatGPT Pro`, and `Message Send Status Unknown`.
+
+### Verification
+
+- RED then GREEN: `npm run test:call-policy`.
+- RED then GREEN: `npm run test:run-envelope`.
+- RED then GREEN: `npm run test:read-recovery`.
+
+## 2026-06-24 - ChatGPT final review follow-up: send click unknown
+
+### Finding
+
+The final ChatGPT review found one remaining P1: `submitPrompt()` could click
+the send button and then fail while waiting for submission confirmation. The
+outer call path would still lack a verified `sentUserMessage` anchor and could
+render `Message Not Sent`, which may induce duplicate prompts.
+
+### Fix
+
+- `submitPrompt()` now includes `sendAttempted` in `chatgpt.prompt_not_submitted`
+  details when any send-button click happened.
+- `applySendStatusFromError()` maps send-attempted failures to
+  `messageSendState.status = send_status_unknown`, sets
+  `automaticResendAllowed: false`, and marks `doNotResend: true`.
+- `chatgpt-pro call` applies that mapping in the outer catch path before sealing
+  the thread echo.
+
+### Verification
+
+- RED then GREEN: `npm run test:call-policy`.
+- `npm run test:run-envelope`: passed.
+- `node --check scripts/chatgpt-call.mjs src/chatgpt-call-policy.mjs
+  src/chatgpt-composer.mjs`: passed.
+
+## 2026-06-24 - ChatGPT final review follow-up: submitPrompt no retry after click
+
+### Finding
+
+ChatGPT final review found the send-click P1 was still incomplete:
+`waitForSubmission()` could throw after a successful click, bypassing the
+`sendAttempted` wrapper, and a clicked-but-unconfirmed attempt could loop into a
+second click.
+
+### Fix
+
+- `submitPrompt()` now accepts injectable helpers for deterministic testing.
+- After any `clicked=true` send attempt, `submitPrompt()` performs exactly one
+  confirmation check. Timeout or exception after that click throws
+  `chatgpt.prompt_not_submitted` with `sendAttempted: true`; it never clicks
+  again.
+
+### Verification
+
+- RED then GREEN: `npm run test:submit-prompt`.
+- `npm run test:call-policy`: passed.
+- `npm run test:run-envelope`: passed.
+- `node --check src/chatgpt-composer.mjs scripts/submit-prompt-selftest.mjs`:
+  passed.
+- Full gate after the fix: `npm run test:deterministic`: passed.
+- Installed cache refreshed with
+  `/Users/linghao/.local/bin/codex --enable plugins plugin add
+  codex-chatgpt-pro-plugin@codex-chatgpt-pro-plugin`.
+- ChatGPT Pro final blocker review returned `PASS` for this remaining P1 with
+  no new P0/P1.

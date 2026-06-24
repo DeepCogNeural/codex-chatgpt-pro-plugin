@@ -131,6 +131,14 @@ alias and task id:
 chatgpt-pro read --alias=polymarket-lp --task-id=lp-release-review
 ```
 
+`read` is not "read whatever answer is latest on the page." It recovers the
+saved `messageAnchor.sentUserMessage` from that room's latest `chatgpt-pro
+call` receipt and reads only the assistant output after that exact user message.
+If the anchor is missing, mismatched, or ambiguous, stop and report the failure;
+do not resend unless the user explicitly asks. If a sent prompt cannot be
+recorded in the room registry, the receipt is a non-zero failure with
+`doNotResend: true` and a recovery `conversationUrl`.
+
 `read --help` is safe and must return CLI usage without touching the browser.
 
 ## ChatGPT Project Workflow
@@ -157,8 +165,10 @@ then repo-local git config `chatgpt-pro.projectUrl`. When a Project URL is
 available with an alias, the daily default is to keep the same ChatGPT Project
 but open a separate conversation for each Codex task. The logical alias is only
 a label; the effective room is task-scoped. Task identity priority is
-`--task-id`, `CHATGPT_TASK_ID`, `CODEX_TASK_ID`, `CODEX_GOAL_ID`,
-`CODEX_THREAD_ID`, `CODEX_SESSION_ID`, then a hash of the prompt/task title.
+`--task-id`, `CHATGPT_TASK_ID`, `CODEX_TASK_ID`, `AGENT_TASK_ID`,
+`CODEX_THREAD_ID`, `CODEX_SESSION_ID`, `CODEX_GOAL_ID`, then a hash of the
+prompt/task title. Thread/session ids are narrower than goal ids so parallel
+child agents under one parent goal do not share a room by accident.
 Reuse an older bound conversation only when the user explicitly asks for
 continuity within that same task:
 
@@ -173,6 +183,10 @@ chatgpt-pro call \
 Use `--shared-room` only when the user explicitly wants multiple Codex tasks or
 agents to share the exact same ChatGPT conversation. It is not the daily
 default.
+
+If no ChatGPT Project URL is configured, first-time alias calls must explicitly
+use `--new` / `--new-thread` to bind a fresh ChatGPT room. Project-scoped calls
+open a new bound conversation by default; non-Project calls do not.
 
 Project source/knowledge upload is separate from a normal message attachment:
 
@@ -213,6 +227,14 @@ receipt paths. Copy the printed block into the Codex thread. Do not summarize,
 paraphrase, trim, or rewrite the `Message Sent To ChatGPT Pro` or
 `Message Received From ChatGPT Pro` sections. Additional commentary may come
 before or after the exact block, but not inside it.
+
+The first heading is tri-state:
+
+- `Message Sent To ChatGPT Pro`: user-message anchor verified.
+- `Message Not Sent To ChatGPT Pro`: no send step completed.
+- `Message Send Status Unknown`: send step completed but the user-message
+  anchor was not verified. Do not automatically resend; inspect the receipt and
+  ask the user before risking a duplicate prompt.
 
 When files are uploaded, the `Message Sent To ChatGPT Pro` block is the exact
 text typed into the composer. The uploaded file bodies are not pasted into the
@@ -360,12 +382,17 @@ the git-level `chatgpt-pro.projectId`, and the canonical session registry:
 Linked git worktrees share the same project id. Separate git repositories get
 separate project ids. Non-git folders fall back to a realpath-derived project
 id. A logical alias such as `critic` becomes an effective room alias such as
-`critic--task-<codex-task>--agent-<agent>` unless `--shared-room` or
+`critic-<hash>--task-<codex-task>-<hash>--agent-<agent>-<hash>` unless `--shared-room` or
 `CHATGPT_SHARED_ROOM=1` is set. Task identity priority is `--task-id`,
-`CHATGPT_TASK_ID`, `CODEX_TASK_ID`, `CODEX_GOAL_ID`, `CODEX_THREAD_ID`,
-`CODEX_SESSION_ID`, then the prompt/task title hash. Agent identity is recorded
+`CHATGPT_TASK_ID`, `CODEX_TASK_ID`, `AGENT_TASK_ID`, `CODEX_THREAD_ID`,
+`CODEX_SESSION_ID`, `CODEX_GOAL_ID`, then the prompt/task title hash.
+Thread/session ids are narrower than goal ids so parallel child agents under
+one parent goal do not share a room by accident. Agent identity is recorded
 separately from `--agent-id`, `CHATGPT_AGENT_ID`, `CODEX_AGENT_ID`, or
 `AGENT_ID`.
+When an upgrade changes the effective alias format, the runner may migrate an
+older task-scoped room only if `requestedAlias + task.id + agent.id + projectId`
+has exactly one match. Multiple matches fail closed.
 
 Room policy:
 
@@ -404,7 +431,8 @@ chatgpt-pro call --alias=critic --new --prompt="..."   # new thread bound to cri
 chatgpt-pro call --alias=main --rebind-alias --conversation-url=https://chatgpt.com/c/... --prompt="..."
 ```
 
-`--fresh` must not mutate the alias. `--new` requires an alias and moves that
+`--fresh` must not mutate the alias, even if the fresh prompt was sent and the
+later response read times out. `--new` requires an alias and moves that
 task-scoped alias to the newly opened thread while preserving lineage.
 `--rebind-alias` points an alias at an already-open conversation. Prefer the
 `rooms` commands when you need to create, rebind, or repair room state without

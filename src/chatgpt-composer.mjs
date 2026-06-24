@@ -295,12 +295,20 @@ export async function waitForSubmission(cdp, { initialUserCount, responseToken, 
   return { submitted: false, probe: lastProbe };
 }
 
-export async function submitPrompt(cdp, { composer, initialUserCount, responseToken = "", attempts = 3 }) {
+export async function submitPrompt(cdp, {
+  composer,
+  initialUserCount,
+  responseToken = "",
+  attempts = 3,
+  clickSendButton = clickComposerSendButton,
+  waitForSubmissionFn = waitForSubmission,
+  composerTextFn = composerText,
+} = {}) {
   let clicked = null;
   let submitted = null;
   const submitAttempts = [];
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    clicked = await clickComposerSendButton(cdp);
+    clicked = await clickSendButton(cdp);
     submitAttempts.push({
       attempt,
       clicked: Boolean(clicked?.clicked),
@@ -310,17 +318,31 @@ export async function submitPrompt(cdp, { composer, initialUserCount, responseTo
       await sleep(500);
       continue;
     }
-    submitted = await waitForSubmission(cdp, { initialUserCount, responseToken });
-    if (submitted.submitted) {
+    let confirmationError = null;
+    try {
+      submitted = await waitForSubmissionFn(cdp, { initialUserCount, responseToken });
+    } catch (error) {
+      confirmationError = error;
+    }
+    if (submitted?.submitted) {
       return {
         ...clicked,
         attempts: submitAttempts,
       };
     }
-    const stagedText = await composerText(cdp).catch(() => "");
+    const stagedText = await composerTextFn(cdp).catch(() => "");
     submitAttempts.at(-1).composerTextLength = stagedText.length;
-    if (!stagedText.trim()) break;
-    await sleep(1_000);
+    const error = new Error("ChatGPT prompt submission could not be verified after clicking send.");
+    error.errorCode = "chatgpt.prompt_not_submitted";
+    error.details = {
+      attempts: submitAttempts,
+      sendAttempted: true,
+      confirmationError: confirmationError ? String(confirmationError?.message || confirmationError) : null,
+      observedUserTurnCount: submitted?.probe?.userTurns?.length ?? null,
+      observedAssistantTurnCount: submitted?.probe?.assistantTurns?.length ?? null,
+      composerTextLength: stagedText.length,
+    };
+    throw error;
   }
 
   if (!clicked?.clicked) {
@@ -337,9 +359,10 @@ export async function submitPrompt(cdp, { composer, initialUserCount, responseTo
   error.errorCode = "chatgpt.prompt_not_submitted";
   error.details = {
     attempts: submitAttempts,
+    sendAttempted: submitAttempts.some((attempt) => attempt.clicked),
     observedUserTurnCount: submitted.probe?.userTurns?.length ?? null,
     observedAssistantTurnCount: submitted.probe?.assistantTurns?.length ?? null,
-    composerTextLength: (await composerText(cdp).catch(() => "")).length,
+    composerTextLength: (await composerTextFn(cdp).catch(() => "")).length,
   };
   throw error;
 }

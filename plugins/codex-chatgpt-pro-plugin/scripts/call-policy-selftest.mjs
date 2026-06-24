@@ -4,9 +4,13 @@ import {
   appendCompletionMarkerInstruction,
   completionMarkerRequired,
   hasCompletionMarker,
+  applySendStatusFromError,
+  markAliasRecordFailure,
   resolveChatGptProjectTarget,
   resolveLevelRequest,
   resolveThreadPolicy,
+  shouldRecordFreshThreadAfterCall,
+  shouldRecordAliasUseAfterCall,
 } from "../src/chatgpt-call-policy.mjs";
 
 assert.equal(DEFAULT_COMPLETION_MARKER, "输出完毕");
@@ -73,6 +77,54 @@ assert.equal(
   }),
   "https://chatgpt.com/g/env",
 );
+
+assert.equal(shouldRecordAliasUseAfterCall({ ok: true }), true);
+assert.equal(shouldRecordAliasUseAfterCall({ ok: false, messageAnchor: { sentUserMessage: { ordinal: 2 } } }), true);
+assert.equal(shouldRecordAliasUseAfterCall({ ok: false, messageAnchor: { assistantStarted: { ordinal: 3 } } }), true);
+assert.equal(shouldRecordAliasUseAfterCall({ ok: false, messageAnchor: {} }), false);
+assert.equal(shouldRecordAliasUseAfterCall(
+  { ok: false, messageAnchor: { sentUserMessage: { ordinal: 2 } } },
+  { freshThread: true },
+), false);
+assert.equal(shouldRecordFreshThreadAfterCall(
+  { ok: false, messageAnchor: { sentUserMessage: { ordinal: 2 } } },
+  { freshThread: true },
+), true);
+assert.equal(shouldRecordFreshThreadAfterCall(
+  { ok: false, messageAnchor: {} },
+  { freshThread: true },
+), false);
+const sentButUnrecorded = markAliasRecordFailure(
+  {
+    ok: true,
+    room: { conversationUrl: "https://chatgpt.com/c/recovery-room" },
+    messageAnchor: {
+      sentUserMessage: {
+        ordinal: 2,
+        conversationUrl: "https://chatgpt.com/c/recovery-room",
+      },
+    },
+  },
+  null,
+);
+assert.equal(sentButUnrecorded.ok, false);
+assert.equal(sentButUnrecorded.doNotResend, true);
+assert.equal(sentButUnrecorded.errorCode, "session.alias_update_failed_after_send");
+assert.equal(sentButUnrecorded.conversationUrl, "https://chatgpt.com/c/recovery-room");
+assert.equal(sentButUnrecorded.aliasRecordError.errorCode, "session.alias_update_empty");
+const unknownSendReceipt = {};
+assert.equal(applySendStatusFromError(unknownSendReceipt, {
+  errorCode: "chatgpt.prompt_not_submitted",
+  details: { sendAttempted: true },
+}), true);
+assert.equal(unknownSendReceipt.messageSendState.status, "send_status_unknown");
+assert.equal(unknownSendReceipt.messageSendState.automaticResendAllowed, false);
+const notSentReceipt = {};
+assert.equal(applySendStatusFromError(notSentReceipt, {
+  errorCode: "page.send_button_not_found",
+  details: { sendAttempted: false },
+}), false);
+assert.equal(notSentReceipt.messageSendState, undefined);
 
 const projectDefault = resolveThreadPolicy({
   session: "polymarket-lp",

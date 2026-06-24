@@ -3,6 +3,7 @@ import {
   assistantRunAfterUser,
   findAssistantAfterUser,
   findNewUserMessage,
+  resolveUserMessageAnchor,
   shapeConversationMessages,
 } from "../src/chatgpt-messages.mjs";
 
@@ -62,6 +63,13 @@ const afterNoAssistant = shapeConversationMessages([
 const userWithoutAssistant = findNewUserMessage(before, afterNoAssistant, prompt);
 assert.equal(userWithoutAssistant.message.ordinal, 2);
 assert.equal(findAssistantAfterUser(afterNoAssistant, userWithoutAssistant.message), null);
+const recoveredUser = resolveUserMessageAnchor(afterNoAssistant, {
+  ordinal: userWithoutAssistant.message.ordinal,
+  textSha256: userWithoutAssistant.message.textSha256,
+  normalizedTextSha256: userWithoutAssistant.message.normalizedTextSha256,
+});
+assert.equal(recoveredUser.ordinal, 2);
+assert.equal(assistantRunAfterUser(afterNoAssistant, recoveredUser).text, "");
 
 const afterCollapsedPrompt = shapeConversationMessages([
   { role: "user", text: "old prompt" },

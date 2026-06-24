@@ -3,7 +3,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
   RECEIVED_HEADING,
+  SEND_STATUS_UNKNOWN_HEADING,
   SENT_HEADING,
+  UNSENT_HEADING,
   renderChatGptTranscript,
   renderReceivedEcho,
   shouldPrintThreadEcho,
@@ -21,9 +23,15 @@ function artifactPath(runDir, file) {
   return resolve(runDir, file);
 }
 
-export function renderEnvelopeTranscript({ kind = "call", sentMarkdown = "", receivedMarkdown = "" } = {}) {
+export function renderEnvelopeTranscript({
+  kind = "call",
+  sentMarkdown = "",
+  receivedMarkdown = "",
+  sentToChatGpt = true,
+  sendStatus = "",
+} = {}) {
   if (kind === "read") return renderReceivedEcho({ receivedMarkdown });
-  return renderChatGptTranscript({ sentMarkdown, receivedMarkdown });
+  return renderChatGptTranscript({ sentMarkdown, receivedMarkdown, sentToChatGpt, sendStatus });
 }
 
 export function threadEchoMode(env = process.env) {
@@ -36,12 +44,23 @@ export function sealRunEnvelope({
   receipt,
   sentMarkdown = "",
   receivedMarkdown = "",
+  sentToChatGpt = true,
+  sendStatus = "",
   stdoutRendered = shouldPrintThreadEcho(),
 } = {}) {
   if (!runDir) throw new Error("runDir is required to seal a ChatGPT run envelope.");
   if (!receipt) throw new Error("receipt is required to seal a ChatGPT run envelope.");
 
-  const transcriptMarkdown = renderEnvelopeTranscript({ kind, sentMarkdown, receivedMarkdown });
+  const effectiveSendStatus = kind === "read"
+    ? null
+    : sendStatus || (sentToChatGpt ? "sent_verified" : "not_sent");
+  const transcriptMarkdown = renderEnvelopeTranscript({
+    kind,
+    sentMarkdown,
+    receivedMarkdown,
+    sentToChatGpt,
+    sendStatus: effectiveSendStatus || "",
+  });
   const transcriptPath = artifactPath(runDir, "transcript.md");
   writeFileSync(transcriptPath, transcriptMarkdown, { mode: 0o600 });
 
@@ -74,6 +93,12 @@ export function sealRunEnvelope({
     requiredForInteractive: true,
     contract: "agent_must_paste_verbatim",
     enforcement: stdoutRendered ? "stdout_rendered_not_verified" : "disabled_by_env",
+    sendStatus: effectiveSendStatus,
+    sentToChatGpt: effectiveSendStatus === "sent_verified"
+      ? true
+      : effectiveSendStatus === "not_sent"
+        ? false
+        : null,
     transcriptSha256: artifactHashes.transcriptSha256,
     sentSha256: sha256Text(sentMarkdown),
     receivedSha256: sha256Text(receivedMarkdown),
@@ -117,8 +142,19 @@ export function verifyRunEnvelope({ receiptPath } = {}) {
     error.errorCode = "transcript.heading_missing";
     throw error;
   }
-  if (kind !== "read" && !transcriptMarkdown.includes(`## ${SENT_HEADING}`)) {
-    const error = new Error(`Transcript missing heading: ## ${SENT_HEADING}`);
+  const sendStatus = kind === "read"
+    ? null
+    : receipt.threadEcho?.sendStatus || (receipt.threadEcho?.sentToChatGpt === false ? "not_sent" : "sent_verified");
+  const sentToChatGpt = kind === "read"
+    ? null
+    : sendStatus === "sent_verified";
+  const expectedSentHeading = sendStatus === "not_sent"
+    ? UNSENT_HEADING
+    : sendStatus === "send_status_unknown"
+      ? SEND_STATUS_UNKNOWN_HEADING
+      : SENT_HEADING;
+  if (kind !== "read" && !transcriptMarkdown.includes(`## ${expectedSentHeading}`)) {
+    const error = new Error(`Transcript missing heading: ## ${expectedSentHeading}`);
     error.errorCode = "transcript.heading_missing";
     throw error;
   }
@@ -129,6 +165,8 @@ export function verifyRunEnvelope({ receiptPath } = {}) {
     kind: kind === "read" ? "read" : "call",
     sentMarkdown,
     receivedMarkdown,
+    sentToChatGpt: sentToChatGpt !== false,
+    sendStatus: sendStatus || "",
   });
   if (transcriptMarkdown !== expected) {
     const error = new Error("Transcript content does not match the canonical renderer.");

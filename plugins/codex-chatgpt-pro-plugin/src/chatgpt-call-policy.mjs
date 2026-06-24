@@ -102,6 +102,65 @@ export function resolveChatGptProjectTarget({
   return explicitProjectUrl || env.CHATGPT_PROJECT_URL || configuredProjectUrl || "";
 }
 
+export function shouldRecordAliasUseAfterCall(receipt = {}, { freshThread = false } = {}) {
+  if (freshThread) return false;
+  return Boolean(
+    receipt?.ok
+    || receipt?.messageAnchor?.sentUserMessage
+    || receipt?.messageAnchor?.assistantStarted
+  );
+}
+
+export function shouldRecordFreshThreadAfterCall(receipt = {}, { freshThread = false } = {}) {
+  if (!freshThread) return false;
+  return Boolean(
+    receipt?.ok
+    || receipt?.messageAnchor?.sentUserMessage
+    || receipt?.messageAnchor?.assistantStarted
+  );
+}
+
+export function markAliasRecordFailure(receipt = {}, error = null, {
+  errorCode = "session.alias_update_failed_after_send",
+} = {}) {
+  const conversationUrl = receipt.conversationUrl
+    || receipt.response?.conversationUrl
+    || receipt.room?.conversationUrl
+    || receipt.messageAnchor?.sentUserMessage?.conversationUrl
+    || "";
+  const previousErrorCode = receipt.errorCode || null;
+  const previousError = receipt.error || null;
+  receipt.aliasRecordError = {
+    errorCode: error?.errorCode || "session.alias_update_empty",
+    error: error ? String(error?.message || error) : "Room registry write returned no alias record.",
+    ...(error?.details ? { details: error.details } : {}),
+  };
+  Object.assign(receipt, {
+    ok: false,
+    errorCode,
+    error: "ChatGPT prompt was sent, but the room registry could not be updated. Do not resend; use the receipt conversationUrl for recovery.",
+    doNotResend: true,
+    conversationUrl: conversationUrl || null,
+    ...(previousErrorCode ? { previousErrorCode } : {}),
+    ...(previousError ? { previousError } : {}),
+  });
+  return receipt;
+}
+
+export function applySendStatusFromError(receipt = {}, error = null) {
+  const details = error?.details || {};
+  const sendAttempted = details.sendAttempted === true
+    || (Array.isArray(details.attempts) && details.attempts.some((attempt) => attempt?.clicked));
+  if (!sendAttempted || receipt.messageAnchor?.sentUserMessage) return false;
+  receipt.messageSendState = {
+    status: "send_status_unknown",
+    automaticResendAllowed: false,
+    reason: error?.errorCode || "send_attempt_unverified",
+  };
+  receipt.doNotResend = true;
+  return true;
+}
+
 export function resolveThreadPolicy({
   session = "",
   freshThread = false,

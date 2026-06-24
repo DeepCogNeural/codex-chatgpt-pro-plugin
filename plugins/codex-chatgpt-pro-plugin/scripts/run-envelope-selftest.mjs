@@ -68,6 +68,56 @@ try {
   writeFileSync(resolve(readDir, "receipt.json"), `${JSON.stringify(readReceipt, null, 2)}\n`);
   assert.equal(verifyRunEnvelope({ receiptPath: resolve(readDir, "receipt.json") }).ok, true);
 
+  const unsentDir = resolve(root, "call-unsent");
+  const unsentReceipt = {
+    loop: "chatgpt-call",
+    runDir: unsentDir,
+    ok: false,
+    errorCode: "lock.timeout",
+  };
+  mkdirSync(unsentDir, { recursive: true });
+  writeFileSync(resolve(unsentDir, "input.md"), sent);
+  writeFileSync(resolve(unsentDir, "prompt.md"), sent);
+  const unsentEnvelope = sealRunEnvelope({
+    kind: "call",
+    runDir: unsentDir,
+    receipt: unsentReceipt,
+    sentMarkdown: sent,
+    receivedMarkdown: "",
+    sentToChatGpt: false,
+    stdoutRendered: true,
+  });
+  assert.equal(unsentReceipt.threadEcho.sentToChatGpt, false);
+  assert.equal(unsentEnvelope.transcriptMarkdown.includes("## Message Sent To ChatGPT Pro"), false);
+  assert.equal(unsentEnvelope.transcriptMarkdown.includes("## Message Not Sent To ChatGPT Pro"), true);
+  writeFileSync(resolve(unsentDir, "receipt.json"), `${JSON.stringify(unsentReceipt, null, 2)}\n`);
+  assert.equal(verifyRunEnvelope({ receiptPath: resolve(unsentDir, "receipt.json") }).ok, true);
+
+  const unknownDir = resolve(root, "call-send-status-unknown");
+  const unknownReceipt = {
+    loop: "chatgpt-call",
+    runDir: unknownDir,
+    ok: false,
+    errorCode: "send.prompt_echo_mismatch",
+  };
+  mkdirSync(unknownDir, { recursive: true });
+  writeFileSync(resolve(unknownDir, "input.md"), sent);
+  writeFileSync(resolve(unknownDir, "prompt.md"), sent);
+  const unknownEnvelope = sealRunEnvelope({
+    kind: "call",
+    runDir: unknownDir,
+    receipt: unknownReceipt,
+    sentMarkdown: sent,
+    receivedMarkdown: "",
+    sendStatus: "send_status_unknown",
+    stdoutRendered: true,
+  });
+  assert.equal(unknownReceipt.threadEcho.sendStatus, "send_status_unknown");
+  assert.equal(unknownEnvelope.transcriptMarkdown.includes("## Message Send Status Unknown"), true);
+  assert.equal(unknownEnvelope.transcriptMarkdown.includes("## Message Not Sent To ChatGPT Pro"), false);
+  writeFileSync(resolve(unknownDir, "receipt.json"), `${JSON.stringify(unknownReceipt, null, 2)}\n`);
+  assert.equal(verifyRunEnvelope({ receiptPath: resolve(unknownDir, "receipt.json") }).ok, true);
+
   assert.equal(threadEchoMode({ CHATGPT_THREAD_ECHO: "0" }), "disabled_by_env");
   assert.equal(threadEchoMode({ CHATGPT_THREAD_ECHO: "false" }), "disabled_by_env");
   assert.equal(threadEchoMode({}), "enabled");

@@ -104,6 +104,12 @@ chatgpt-pro read --alias=<same logical alias> --task-id=<same task id>
 `read` must use the same `--alias` and `--task-id` as the timed-out call. On
 success it refreshes the room registry from the Project home URL to the real
 `/c/...` conversation URL.
+It must recover `messageAnchor.sentUserMessage` from the latest `chatgpt-pro
+call` receipt in that room and wait for the assistant run after that exact user
+message. It must not fall back to "latest assistant turn" or the current browser
+target. Missing, mismatched, or ambiguous anchors are hard failures. If a sent
+prompt or completed read cannot update the room registry, the process must exit
+non-zero, set `doNotResend: true`, and preserve the real `conversationUrl`.
 
 The canonical call path must not use OS-level mouse or keyboard automation. For
 message insertion it should use DOM focus, CDP `Input.insertText`, and a DOM
@@ -151,14 +157,20 @@ repo project ids. Project URL priority is explicit `--project-url`, then
 `CHATGPT_PROJECT_URL`, then repo-local git config `chatgpt-pro.projectUrl`.
 When a Project URL is available, the wrapper resolves a logical alias to an
 effective task-scoped alias. For example, `--alias=critic --task-id=lp-risk`
-may resolve to `critic--task-lp-risk--agent-agent-a`. Task identity priority is
-`--task-id`, `CHATGPT_TASK_ID`, `CODEX_TASK_ID`, `CODEX_GOAL_ID`,
-`CODEX_THREAD_ID`, `CODEX_SESSION_ID`, then the prompt/task title hash. Agent
-identity is recorded separately from `--agent-id`, `CHATGPT_AGENT_ID`,
+may resolve to `critic-<hash>--task-lp-risk-<hash>--agent-agent-a-<hash>`.
+Task identity priority is `--task-id`, `CHATGPT_TASK_ID`, `CODEX_TASK_ID`,
+`AGENT_TASK_ID`, `CODEX_THREAD_ID`, `CODEX_SESSION_ID`, `CODEX_GOAL_ID`, then
+the prompt/task title hash. Thread/session ids are intentionally narrower than
+goal ids, so parallel child agents under one parent goal do not share a room by
+accident.
+Agent identity is recorded separately from `--agent-id`, `CHATGPT_AGENT_ID`,
 `CODEX_AGENT_ID`, or `AGENT_ID`. Reuse the previous bound room only with
 `--reuse-room` / `--continue-room` or `CHATGPT_REUSE_ROOM=1`. Use
 `--shared-room` only when multiple tasks or agents should deliberately share
 the exact same ChatGPT conversation.
+If the effective alias algorithm changes, registry lookup may migrate an older
+task-scoped key only when `requestedAlias`, `task.id`, `agent.id`, and
+`projectId` produce exactly one match. Multiple matches must fail closed.
 
 Room lifecycle commands:
 
@@ -179,6 +191,10 @@ prompt. `--registry-only` validates the ChatGPT URL shape but records
 verifies or repairs the target.
 
 Call thread modes:
+
+CLI options support both `--name=value` and `--name value`; examples may use
+either form. Generated commands should prefer `--name=value` for easier shell
+copying.
 
 ```bash
 chatgpt-pro call --alias main
@@ -212,7 +228,8 @@ chatgpt-pro call --alias critic --fresh
 ```
 
 Open a new unbound thread. The alias is only a hint for the receipt and
-`freshThreads` history; it does not replace the active `critic` room.
+`freshThreads` history; it does not replace the active `critic` room. This
+remains true if the fresh prompt is sent and the later response read times out.
 
 ```bash
 chatgpt-pro call --alias critic --new
@@ -277,7 +294,9 @@ For multi-agent/multi-repo operation, the posture is:
 - one shared logged-in browser profile
 - one global browser-profile lock around active browser control
 - separate repo-owned aliases for separate agents/tasks/repos
-- reuse each alias by default
+- Project-scoped calls create a new task-scoped conversation by default unless
+  `--reuse-room` is explicit
+- non-Project first-time alias calls require `--new` / `--new-thread`
 - use `rooms new` to deliberately move an alias to a clean long-lived thread
 - use `--fresh` only for one-off clean rooms
 
@@ -329,6 +348,12 @@ block into the Codex thread. Do not summarize, paraphrase, trim, or rewrite the
 `Message Sent To ChatGPT Pro` or `Message Received From ChatGPT Pro` sections.
 Additional commentary may come before or after the exact block, but not inside
 it. Machine consumers may set `CHATGPT_THREAD_ECHO=0`.
+
+The first heading is tri-state. `Message Sent To ChatGPT Pro` means the
+user-message anchor was verified. `Message Not Sent To ChatGPT Pro` means no
+send step completed. `Message Send Status Unknown` means the send step completed
+but the user-message anchor could not be verified; agents must not automatically
+resend in that state.
 
 For attachment calls, the `Message Sent To ChatGPT Pro` block is the exact text
 typed into the composer. Uploaded file bodies are not pasted into the Codex
@@ -572,7 +597,7 @@ For `chatgpt-pro call`, receipt data should include:
 - `history.visible_message_count_too_low`
 - `send.no_user_message_observed`
 - `send.blocked_by_modal`
-- `response.timeout`
+- `chatgpt.response_timeout`
 - `response.incomplete`
 - `response.empty`
 - `response.possibly_stale`

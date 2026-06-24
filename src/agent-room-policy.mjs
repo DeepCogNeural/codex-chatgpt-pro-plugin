@@ -10,24 +10,27 @@ const AGENT_ENV_KEYS = [
 const TASK_ENV_KEYS = [
   "CHATGPT_TASK_ID",
   "CODEX_TASK_ID",
-  "CODEX_GOAL_ID",
+  "AGENT_TASK_ID",
   "CODEX_THREAD_ID",
   "CODEX_SESSION_ID",
-  "AGENT_TASK_ID",
+  "CODEX_GOAL_ID",
 ];
 
 function sha256(text) {
   return createHash("sha256").update(String(text || "")).digest("hex");
 }
 
-export function slugifyRoomPart(value, { maxLength = 24, fallback = "agent" } = {}) {
-  const slug = String(value || "")
+export function slugifyRoomPart(value, { maxLength = 24, fallback = "agent", hashLength = 10 } = {}) {
+  const raw = String(value || "");
+  const suffix = sha256(raw).slice(0, hashLength);
+  const maxBaseLength = Math.max(1, maxLength - hashLength - 1);
+  const base = raw
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, maxLength)
+    .slice(0, maxBaseLength)
     .replace(/-+$/g, "");
-  return slug || fallback;
+  return `${base || fallback}-${suffix}`;
 }
 
 export function compactTaskTitle(text = "", { maxLength = 56, fallback = "untitled task" } = {}) {
@@ -97,7 +100,7 @@ export function resolveTaskIdentity({
   const seed = taskTitle || title;
   return {
     id: `title:${sha256(seed).slice(0, 12)}`,
-    slug: `${slugifyRoomPart(title, { maxLength: 22, fallback: "task" })}-${sha256(seed).slice(0, 8)}`,
+    slug: slugifyRoomPart(seed, { maxLength: 24, fallback: "task" }),
     source: taskTitle ? "task_title" : "fallback_title",
   };
 }
