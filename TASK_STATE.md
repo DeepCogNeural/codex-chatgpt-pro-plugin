@@ -259,3 +259,46 @@ tasks from sharing the same ChatGPT conversation by accident.
 - RED: `node scripts/agent-room-policy-selftest.mjs` failed because
   `resolveTaskIdentity` did not exist.
 - GREEN: `node scripts/agent-room-policy-selftest.mjs` passed.
+
+## 2026-06-24 Project New Conversation Active-State Fix
+
+### Goal
+
+Make `chatgpt-pro call` reliably open and use a new conversation inside the
+configured ChatGPT Project.
+
+### Root Cause
+
+- Several failed Project calls opened a Project tab, but the room stayed bound
+  to the Project home URL ending in `/project` instead of a real conversation
+  URL under `/c/...`.
+- The failing step was `wait-active-run-before-choices`.
+- Receipt evidence showed the only active label was
+  `Open conversation options for LP resize/cancel review`.
+- The active-run detector matched any button label containing `cancel`, so a
+  normal conversation title containing `resize/cancel` was treated as an active
+  ChatGPT generation. The wrapper waited until timeout and never sent the first
+  message that would create the new Project conversation.
+
+### Fix
+
+- Added a deterministic generation-state selftest.
+- `generationState()` now only treats explicit generation controls/statuses as
+  active: `Stop answering`, `Stop generating`, `Interrupt`, `Pro thinking`,
+  `Reading documents`, and `Finalizing answer`.
+- Ordinary conversation option labels containing words like `cancel` no longer
+  block Project calls.
+
+### Verification
+
+- RED: `npm run test:generation-state` failed because the new helper exports
+  did not exist.
+- GREEN: `npm run test:generation-state`: passed.
+- `npm run test:cleanup-duplicate-upload`: passed.
+- `npm run test:non-interference`: passed.
+- Live check on existing ChatGPT Project home returned `generationState.active:
+  false`.
+- Live smoke:
+  `chatgpt-pro call --alias=polymarket-lp --task-id=codex-project-new-convo-smoke-20260624 ...`
+  passed and created
+  `https://chatgpt.com/g/g-p-6a35e91256988191b967fe33344b0f04-polymarket-lp/c/6a3b2b96-bd5c-83ea-a4af-949750535b3e`.
