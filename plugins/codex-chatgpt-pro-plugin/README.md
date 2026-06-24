@@ -124,12 +124,23 @@ By default, `call` asks for the best available Pro reasoning level, preferring
 label. It also appends a hard completion instruction: ChatGPT must end with a
 final line that is exactly `输出完毕`. Codex treats the call as incomplete until
 the active run is finished and that marker is present. If the page is still
-showing `Pro thinking`, `Reading documents`, `Finalizing answer`, or any
-Stop/Cancel/Interrupt control, the CLI waits or fails closed; it must not stop,
-reload, retry, resend, or type over the active run.
+showing `Pro thinking`, `Reading documents`, `Finalizing answer`, `Stop
+answering`, `Stop generating`, or `Interrupt`, the CLI waits or fails closed;
+it must not stop, reload, retry, resend, or type over the active run.
 
 中文硬规则：ChatGPT 思考、读文档、收尾时绝不打断；必须等它输出完成，并要求末尾明确写
 `输出完毕`，Codex 看到这个 marker 后才继续。
+
+If a call returns `chatgpt.response_timeout` after `verified-user-message` or
+`assistant-started`, the prompt was already sent. Do not resend it. Continue the
+same ChatGPT conversation with the exact same logical room and task id:
+
+```bash
+chatgpt-pro read --alias=polymarket-lp --task-id=lp-release-review
+```
+
+Use `read --help` for usage; help commands are registry/CLI-only and must not
+touch the browser.
 
 Project URL priority is explicit `--project-url`, then `CHATGPT_PROJECT_URL`,
 then the repo-local git config `chatgpt-pro.projectUrl`. When a Project URL is

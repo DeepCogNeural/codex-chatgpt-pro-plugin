@@ -302,3 +302,53 @@ configured ChatGPT Project.
   `chatgpt-pro call --alias=polymarket-lp --task-id=codex-project-new-convo-smoke-20260624 ...`
   passed and created
   `https://chatgpt.com/g/g-p-6a35e91256988191b967fe33344b0f04-polymarket-lp/c/6a3b2b96-bd5c-83ea-a4af-949750535b3e`.
+
+## 2026-06-24 Read Timeout Recovery + CLI Help Fix
+
+### Goal
+
+Remove ambiguity for agents after `chatgpt.response_timeout`, and make CLI help
+safe to call without touching the live browser.
+
+### Evidence
+
+- A real Polymarket call at
+  `.devspace/runs/2026-06-24T01-02-52-933Z-chatgpt-call/receipt.json` returned
+  `chatgpt.response_timeout`, but it had already verified the user message and
+  detected that the assistant started. That means the prompt was sent; retrying
+  `call` would duplicate the request.
+- The follow-up read at
+  `.devspace/runs/2026-06-24T01-09-50-402Z-chatgpt-read-current/receipt.json`
+  succeeded against the same room and returned `NEEDS_CHANGES ... 输出完毕`.
+- Another agent then tried `chatgpt-pro read --help`; before this fix, that
+  path dispatched into the live `read` command instead of printing CLI help.
+- The room registry still pointed at the Project home URL ending in `/project`
+  after a successful read, so later agents had to rediscover the actual
+  conversation.
+
+### Fix
+
+- Added command-specific help handling in `bin/chatgpt-pro`. `read --help` now
+  prints usage and cannot acquire the browser lock or create `.devspace/runs`.
+- Documented the timeout recovery rule in README, the packaged skill, and the
+  call contract: if the receipt has `messageAnchor.sentUserMessage` or
+  `messageAnchor.assistantStarted`, do not resend; use `chatgpt-pro read` with
+  the same logical `--alias` and same `--task-id`.
+- `scripts/chatgpt-read-current.mjs` now records the actual `/c/...`
+  conversation URL back into the room registry after a successful read.
+
+### Verification
+
+- RED: `npm run test:cli-help` initially timed out because `read --help`
+  entered the live read path.
+- GREEN: `npm run test:cli-help`: passed.
+- `npm run test:package-surface`: passed.
+- `node --check bin/chatgpt-pro scripts/chatgpt-read-current.mjs
+  scripts/package-surface-selftest.mjs scripts/cli-help-selftest.mjs`: passed.
+- `npm run test:deterministic`: passed.
+- Live recovery read:
+  `chatgpt-pro read --alias=polymarket-lp --task-id=aws-arm-migration-uploaded-final-review-retry2-20260624`
+  succeeded without resending and returned `NEEDS_CHANGES ... 输出完毕`.
+- Follow-up status confirmed the room registry now stores
+  `https://chatgpt.com/g/g-p-6a35e91256988191b967fe33344b0f04-polymarket-lp/c/6a3b2fb1-1130-83ea-8709-34e6c2502103`
+  instead of the Project home URL.

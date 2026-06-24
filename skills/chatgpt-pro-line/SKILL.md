@@ -122,6 +122,17 @@ daily use.
 中文硬规则：ChatGPT 思考、读文档、收尾时绝不打断；必须等它输出完成，并要求末尾明确写
 `输出完毕`，Codex 看到这个 marker 后才继续。
 
+If `call` returns `chatgpt.response_timeout` but the receipt contains
+`messageAnchor.sentUserMessage` or `messageAnchor.assistantStarted`, the prompt
+was already sent. Do not resend the prompt. Use `read` with the same logical
+alias and task id:
+
+```bash
+chatgpt-pro read --alias=polymarket-lp --task-id=lp-release-review
+```
+
+`read --help` is safe and must return CLI usage without touching the browser.
+
 ## ChatGPT Project Workflow
 
 Local repo project ids and ChatGPT UI Projects are different concepts. For a
@@ -479,7 +490,7 @@ Useful flags:
 ```bash
 chatgpt-pro call --alias=main --lock-timeout-ms=600000 --prompt="..."
 chatgpt-pro call --alias=main --no-wait --prompt="..."
-chatgpt-pro read --alias=main --stale-lock-ttl-ms=900000
+chatgpt-pro read --alias=main --task-id=my-task --stale-lock-ttl-ms=900000
 ```
 
 The current release allows only one live browser operation at a time. Do not

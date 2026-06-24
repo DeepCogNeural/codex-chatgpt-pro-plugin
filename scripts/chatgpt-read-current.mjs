@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { connectToPage, now } from "../src/cdp-client.mjs";
 import { pageProbe, redactedProbe } from "../src/chatgpt-page.mjs";
 import { waitForAssistantResponse } from "../src/chatgpt-composer.mjs";
-import { connectToChatGptSession } from "../src/chatgpt-sessions.mjs";
+import { connectToChatGptSession, recordChatGptAliasUse } from "../src/chatgpt-sessions.mjs";
 import { acquireChatGptOperation } from "../src/chatgpt-operation.mjs";
 import { writeJson } from "../src/observe.mjs";
 import { ensureProjectState } from "../src/project-state.mjs";
@@ -68,6 +68,7 @@ let cdp = null;
 let operationHandle = null;
 let assistantText = "";
 let envelope = null;
+let connectedTarget = null;
 const stdoutThreadEcho = threadEchoMode() === "enabled";
 const started = now();
 const receipt = {
@@ -113,6 +114,7 @@ try {
   if (session) {
     const connected = await connectToChatGptSession(port, session);
     cdp = connected.cdp;
+    connectedTarget = connected.target;
     receipt.sessionTarget = {
       targetId: connected.target.id,
       title: connected.target.title,
@@ -136,11 +138,15 @@ try {
   });
   assistantText = response.assistantText;
   writeFileSync(resolve(runDir, "assistant.md"), assistantText, { mode: 0o600 });
+  const finalConversationUrl = response.probe?.url || before.url;
+  if (connectedTarget && finalConversationUrl) {
+    connectedTarget = { ...connectedTarget, url: finalConversationUrl };
+  }
 
   Object.assign(receipt, {
     ok: true,
     completedAt: new Date().toISOString(),
-    conversationUrl: response.probe?.url || before.url,
+    conversationUrl: finalConversationUrl,
     title: before.title,
     assistantTextLength: response.assistantText.length,
     response: {
@@ -155,6 +161,24 @@ try {
       initialProbe: resolve(runDir, "initial-probe.json"),
     },
   });
+  if (session && connectedTarget) {
+    try {
+      receipt.aliasRecord = recordChatGptAliasUse({
+        name: session,
+        target: connectedTarget,
+        runId,
+        receiptPath: resolve(runDir, "receipt.json"),
+        transcriptPath: resolve(runDir, "transcript.md"),
+        agentRoom,
+      });
+    } catch (error) {
+      receipt.aliasRecordError = {
+        errorCode: error?.errorCode || "session.alias_update_failed",
+        error: String(error?.message || error),
+        ...(error?.details ? { details: error.details } : {}),
+      };
+    }
+  }
 } catch (error) {
   Object.assign(receipt, {
     ok: false,
