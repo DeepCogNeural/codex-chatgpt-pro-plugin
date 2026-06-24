@@ -80,15 +80,30 @@ true:
 - the visible ChatGPT run is no longer active
 - the final non-empty assistant line equals `输出完毕`
 
-If the page shows `Pro thinking`, `Reading documents`, `Finalizing answer`, or
-any Stop/Cancel/Interrupt control, Codex must wait or fail closed. It must not
-click stop, reload, retry, resend, clear the composer, type another prompt, or
-infer completion from a stale wrapper read. `--no-completion-marker` and
+If the page shows `Pro thinking`, `Reading documents`, `Finalizing answer`,
+`Stop answering`, `Stop generating`, or `Interrupt`, Codex must wait or fail
+closed. It must not click stop, reload, retry, resend, clear the composer, type
+another prompt, or infer completion from a stale wrapper read.
+`--no-completion-marker` and
 `CHATGPT_REQUIRE_COMPLETION_MARKER=0` are transport-debugging escapes, not the
 daily workflow.
 
 Chinese hard rule for daily agents: ChatGPT 思考、读文档、收尾时绝不打断；必须等它输出完成，
 并要求末尾明确写 `输出完毕`，Codex 看到这个 marker 后才继续。
+
+Timeout recovery rule: `chatgpt.response_timeout` does not always mean send
+failure. If the receipt has `messageAnchor.sentUserMessage` or
+`messageAnchor.assistantStarted`, the user message was already sent. Do not
+retry `call` unless the user explicitly asks to resend. Continue the same
+conversation with:
+
+```bash
+chatgpt-pro read --alias=<same logical alias> --task-id=<same task id>
+```
+
+`read` must use the same `--alias` and `--task-id` as the timed-out call. On
+success it refreshes the room registry from the Project home URL to the real
+`/c/...` conversation URL.
 
 The canonical call path must not use OS-level mouse or keyboard automation. For
 message insertion it should use DOM focus, CDP `Input.insertText`, and a DOM

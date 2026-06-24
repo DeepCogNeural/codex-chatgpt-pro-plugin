@@ -29,6 +29,9 @@ assert.match(skill, /--shared-room/);
 assert.match(skill, /--task-id/);
 assert.match(skill, /CODEX_THREAD_ID/);
 assert.match(skill, /separate conversation for each Codex task/);
+assert.match(skill, /chatgpt\.response_timeout/);
+assert.match(skill, /Do not resend the prompt/);
+assert.match(skill, /`read --help` is safe/);
 assert.equal(pluginSkill, skill);
 
 const readme = readFileSync("README.md", "utf8");
@@ -41,6 +44,8 @@ assert.match(readme, /CHATGPT_AGENT_ID/);
 assert.match(readme, /CHATGPT_TASK_ID/);
 assert.match(readme, /CHATGPT_SHARED_ROOM=1/);
 assert.match(readme, /scopes the conversation\s+by Codex task/);
+assert.match(readme, /Do not resend it/);
+assert.match(readme, /read --help/);
 assert.match(readme, /npm run test:v1/);
 assert.match(readme, /npm run test:live/);
 assert.match(readme, /`npm test`: runs deterministic tests only/);

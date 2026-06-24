@@ -42,6 +42,87 @@ function usage() {
   ].join("\n");
 }
 
+function commandUsage(command) {
+  const examples = {
+    call: [
+      "Usage: chatgpt-pro call --alias=<name> --task-id=<id> [options]",
+      "",
+      "Sends one blocking prompt to ChatGPT Pro.",
+      "Project calls open a new conversation by default. Reuse only with --reuse-room.",
+      "If the prompt was sent but the response timed out: Do not resend. Use:",
+      "  chatgpt-pro read --alias=<same-name> --task-id=<same-id>",
+      "",
+    ],
+    read: [
+      "Usage: chatgpt-pro read --alias=<name> --task-id=<id> [options]",
+      "",
+      "Reads the latest response from an existing ChatGPT room. It does not send a prompt.",
+      "Use the same --alias and --task-id from the call you want to continue.",
+      "This is the recovery path after chatgpt.response_timeout when the user message was verified.",
+      "",
+    ],
+    status: [
+      "Usage: chatgpt-pro status --alias=<name> --task-id=<id>",
+      "",
+      "Shows local room, lock, and model-cache state without touching the browser.",
+      "",
+    ],
+    history: [
+      "Usage: chatgpt-pro history <export|read> [options]",
+      "",
+      "Exports visible ChatGPT history or reads a compiled history artifact.",
+      "",
+    ],
+    rooms: [
+      "Usage: chatgpt-pro rooms <project|list|show|new|rebind|repair> [options]",
+      "",
+      "Manages repo-scoped room bindings. list/show/project are registry-only.",
+      "",
+    ],
+    cleanup: [
+      "Usage: chatgpt-pro cleanup duplicate-upload",
+      "",
+      "Dismisses duplicate-upload modals without interrupting active ChatGPT runs.",
+      "",
+    ],
+    doctor: [
+      "Usage: chatgpt-pro doctor [--warm|--live]",
+      "",
+      "Warms or verifies the dedicated ChatGPT browser profile.",
+      "",
+    ],
+    "project-source": [
+      "Usage: chatgpt-pro project-source upload --source-file=<path> --confirm-project-source-upload",
+      "",
+      "Uploads files to the configured ChatGPT Project source/knowledge area.",
+      "",
+    ],
+    context: [
+      "Usage: chatgpt-pro context bundle [options]",
+      "",
+      "Builds a repo context monofile and manifest.",
+      "",
+    ],
+    transcript: [
+      "Usage: chatgpt-pro transcript verify --receipt=<path>",
+      "",
+      "Verifies transcript artifacts and hashes.",
+      "",
+    ],
+    init: [
+      "Usage: chatgpt-pro init [--force-skill]",
+      "",
+      "Creates repo-local state and installs the skill.",
+      "",
+    ],
+  };
+  return (examples[command] || [usage()]).join("\n");
+}
+
+function wantsHelp(values) {
+  return values.includes("--help") || values.includes("-h") || values[0] === "help";
+}
+
 function copyFileIfNeeded(source, target, { force = false } = {}) {
   mkdirSync(dirname(target), { recursive: true });
   const sourceText = readFileSync(source, "utf8");
@@ -94,7 +175,12 @@ const command = process.argv[2] || "help";
 const rest = process.argv.slice(3);
 
 if (command === "help" || command === "--help" || command === "-h") {
-  console.log(usage());
+  console.log(rest[0] ? commandUsage(rest[0]) : usage());
+  process.exit(0);
+}
+
+if (wantsHelp(rest)) {
+  console.log(commandUsage(command));
   process.exit(0);
 }
 
