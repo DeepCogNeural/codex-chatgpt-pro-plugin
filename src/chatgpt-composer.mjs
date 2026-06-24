@@ -401,10 +401,25 @@ function isProgressPlaceholder(text) {
   return !cleanAssistantText(text) && /pro thinking|reading documents|finalizing answer|thinking|reasoning|working/i.test(String(text || ""));
 }
 
+export function isActiveGenerationLabel(label) {
+  const text = String(label || "").trim();
+  return /^(stop answering|stop generating|interrupt|pro thinking|reading documents|finalizing answer)$/i.test(text)
+    || /\bstop (answering|generating)\b/i.test(text);
+}
+
+export function activeGenerationLabels(labels = []) {
+  return labels.filter(isActiveGenerationLabel);
+}
+
 export async function generationState(cdp) {
   return evaluate(
     cdp,
     `(() => {
+      const isActiveGenerationLabel = (label) => {
+        const text = String(label || "").trim();
+        return /^(stop answering|stop generating|interrupt|pro thinking|reading documents|finalizing answer)$/i.test(text)
+          || /\\bstop (answering|generating)\\b/i.test(text);
+      };
       const visible = (el) => {
         const r = el.getBoundingClientRect();
         const style = getComputedStyle(el);
@@ -422,12 +437,11 @@ export async function generationState(cdp) {
         .filter(visible)
         .map((el) => (el.innerText || "").trim())
         .filter((text) => /^(pro thinking|reading documents|finalizing answer)$/i.test(text));
+      const activeLabels = labels.filter(isActiveGenerationLabel);
       return {
-        active: labels.some((label) => /stop answering|stop generating|interrupt|cancel/i.test(label))
-          || labels.some((label) => /^(pro thinking|reading documents|finalizing answer)$/i.test(label))
-          || statusTexts.length > 0,
+        active: activeLabels.length > 0 || statusTexts.length > 0,
         labels: [
-          ...labels.filter((label) => /stop|interrupt|cancel|pro thinking|reading documents|finalizing answer/i.test(label)),
+          ...activeLabels,
           ...statusTexts,
         ],
       };
