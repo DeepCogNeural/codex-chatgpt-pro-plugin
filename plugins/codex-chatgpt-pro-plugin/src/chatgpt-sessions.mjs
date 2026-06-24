@@ -231,6 +231,72 @@ function writeRegistry(registry) {
   writeJsonAtomic(canonicalPath, normalizeSessionRegistry(registry, project));
 }
 
+function sameIdentityPart(a, b) {
+  return Boolean(a?.id && b?.id && a.id === b.id);
+}
+
+function roomMatchesAgentRoom(room, agentRoom, project) {
+  if (!room || !agentRoom?.requestedAlias) return false;
+  if (room.projectId && room.projectId !== project.projectId) return false;
+  return room.requestedAlias === agentRoom.requestedAlias
+    && room.scope === agentRoom.scope
+    && room.taskScoped === agentRoom.taskScoped
+    && sameIdentityPart(room.agent, agentRoom.agent)
+    && sameIdentityPart(room.task, agentRoom.task);
+}
+
+function migrateLegacyRoomAliasInRegistry(registry, { name, agentRoom, project }) {
+  if (!name || !agentRoom || agentRoom.scope === "shared" || registry.rooms[name]) {
+    return registry.rooms[name] || null;
+  }
+  const matches = Object.entries(registry.rooms || {})
+    .filter(([alias]) => alias !== name)
+    .filter(([, room]) => roomMatchesAgentRoom(room, agentRoom, project));
+  if (!matches.length) return null;
+  if (matches.length > 1) {
+    throw roomError(
+      "session.alias_identity_ambiguous",
+      `Multiple legacy ChatGPT room aliases match requested alias "${agentRoom.requestedAlias}". Refusing to guess.`,
+      {
+        requestedAlias: agentRoom.requestedAlias,
+        effectiveAlias: name,
+        matches: matches.map(([alias, room]) => ({
+          alias,
+          activeConversationUrl: room.activeConversationUrl || room.conversationUrl || room.url || null,
+          lastUsedAt: room.lastUsedAt || null,
+        })),
+      },
+    );
+  }
+  const [legacyAlias, legacyRoom] = matches[0];
+  const migrated = normalizeRoom(name, {
+    ...legacyRoom,
+    requestedAlias: agentRoom.requestedAlias,
+    scope: agentRoom.scope,
+    taskScoped: agentRoom.taskScoped,
+    agentScoped: agentRoom.agentScoped,
+    agent: agentRoom.agent,
+    task: agentRoom.task,
+    taskTitle: agentRoom.taskTitle || legacyRoom.taskTitle || "",
+    roomLabel: agentRoom.roomLabel || legacyRoom.roomLabel || "",
+  }, project);
+  migrated.migratedAliasFrom = legacyAlias;
+  migrated.migratedAliasAt = nowIso();
+  registry.rooms[name] = migrated;
+  delete registry.rooms[legacyAlias];
+  return registry.rooms[name];
+}
+
+export function migrateLegacyRoomAlias({ name, agentRoom } = {}) {
+  const project = ensureProjectState();
+  return withProjectStateLockSync({ project, reason: `migrate-room-alias:${name}` }, () => {
+    const registry = readRegistry();
+    const migrated = migrateLegacyRoomAliasInRegistry(registry, { name, agentRoom, project });
+    if (migrated) writeRegistry(registry);
+    return migrated;
+  });
+}
+
 function isChatGptTarget(target) {
   try {
     const url = new URL(target.url || "");
@@ -587,6 +653,7 @@ export async function resolveVerifiedRoomTarget(port, selector, {
   allowRebind = false,
   conversationUrl = "",
   threadMode = "continue",
+  agentRoom = null,
 } = {}) {
   const startedAt = Date.now();
   const project = ensureProjectState();
@@ -596,7 +663,9 @@ export async function resolveVerifiedRoomTarget(port, selector, {
 
   const registry = readRegistry();
   const sessions = await listChatGptSessions(port);
-  const saved = selector ? registry.rooms[selector] : null;
+  const saved = selector
+    ? registry.rooms[selector] || migrateLegacyRoomAlias({ name: selector, agentRoom })
+    : null;
   if (!selector) {
     const target = sessions[0] || null;
     if (!target) return { target: null, room: null, roomTarget: null };
@@ -732,8 +801,8 @@ export async function closeChatGptSession(port, { name, targetId } = {}) {
   return target;
 }
 
-export async function connectToChatGptSession(port, selector, { allowRebind = false, conversationUrl = "" } = {}) {
-  const resolved = await resolveVerifiedRoomTarget(port, selector, { allowRebind, conversationUrl });
+export async function connectToChatGptSession(port, selector, { allowRebind = false, conversationUrl = "", agentRoom = null } = {}) {
+  const resolved = await resolveVerifiedRoomTarget(port, selector, { allowRebind, conversationUrl, agentRoom });
   const target = resolved.target;
   if (!target) throw new Error(`ChatGPT session not found: ${selector || "(first)"}`);
   await activateChatGptSession(port, { targetId: target.id });
@@ -771,7 +840,8 @@ export function recordChatGptAliasUse({ name, target, runId, receiptPath, transc
   const project = ensureProjectState();
   return withProjectStateLockSync({ project, reason: `record-alias-use:${name}` }, () => {
     const registry = readRegistry();
-    const saved = registry.rooms[name];
+    const saved = registry.rooms[name]
+      || migrateLegacyRoomAliasInRegistry(registry, { name, agentRoom, project });
     if (!saved) return null;
     if (saved.projectId !== project.projectId) throw mismatchError(name, saved, project);
     const timestamp = nowIso();

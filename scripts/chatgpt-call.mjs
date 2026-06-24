@@ -21,6 +21,7 @@ import { buildRepoContextBundle } from "../src/repo-context-bundle.mjs";
 import { decideRepoContextMode } from "../src/repo-context-policy.mjs";
 import {
   cleanupStaleUploadUi,
+  chatGptConversationScopeUrl,
   defaultUploadLedgerPath,
   messageUploadScopeKey,
   recordUploadedFiles,
@@ -58,26 +59,48 @@ import {
 } from "../src/runtime-config.mjs";
 import {
   appendCompletionMarkerInstruction,
+  applySendStatusFromError,
   completionMarkerFromEnv,
   completionMarkerRequired,
   resolveChatGptProjectTarget,
   resolveLevelRequest,
   resolveThreadPolicy,
+  markAliasRecordFailure,
+  shouldRecordFreshThreadAfterCall,
+  shouldRecordAliasUseAfterCall,
 } from "../src/chatgpt-call-policy.mjs";
 import { configuredChatGptProjectUrl } from "../src/git-config.mjs";
 import { resolveAgentRoom } from "../src/agent-room-policy.mjs";
 
 function arg(name) {
   const prefix = `--${name}=`;
-  const hit = process.argv.find((value) => value.startsWith(prefix));
-  return hit ? hit.slice(prefix.length) : null;
+  for (let index = 2; index < process.argv.length; index += 1) {
+    const value = process.argv[index];
+    if (value.startsWith(prefix)) return value.slice(prefix.length);
+    if (value === `--${name}`) {
+      const next = process.argv[index + 1];
+      return next && !next.startsWith("--") ? next : "";
+    }
+  }
+  return null;
 }
 
 function args(name) {
   const prefix = `--${name}=`;
-  return process.argv
-    .filter((value) => value.startsWith(prefix))
-    .map((value) => value.slice(prefix.length));
+  const values = [];
+  for (let index = 2; index < process.argv.length; index += 1) {
+    const value = process.argv[index];
+    if (value.startsWith(prefix)) {
+      values.push(value.slice(prefix.length));
+    } else if (value === `--${name}`) {
+      const next = process.argv[index + 1];
+      if (next && !next.startsWith("--")) {
+        values.push(next);
+        index += 1;
+      }
+    }
+  }
+  return values;
 }
 
 function flag(name) {
@@ -402,7 +425,7 @@ async function main() {
       const target = await step(receipt, "open-bound-thread", () =>
         newChatGptSession(port, { name: session, url: targetUrl, bind: true }),
       );
-      const connected = await connectToChatGptSession(port, session);
+      const connected = await connectToChatGptSession(port, session, { agentRoom });
       cdp = connected.cdp;
       connectedTarget = connected.target || target;
       receipt.sessionTarget = {
@@ -412,7 +435,7 @@ async function main() {
       };
       receipt.room.conversationUrl = connectedTarget.url;
     } else if (session) {
-      const connected = await connectToChatGptSession(port, session, { allowRebind: rebindAlias, conversationUrl });
+      const connected = await connectToChatGptSession(port, session, { allowRebind: rebindAlias, conversationUrl, agentRoom });
       cdp = connected.cdp;
       connectedTarget = connected.target;
       receipt.sessionTarget = {
@@ -537,6 +560,11 @@ async function main() {
       }),
     );
     receipt.steps.at(-1).method = sent.method;
+    receipt.messageSendState = {
+      status: "send_status_unknown",
+      automaticResendAllowed: false,
+      reason: "send step completed but user message anchor is not verified yet",
+    };
 
     runState.update("verifying-user-message");
     const sentUser = await step(receipt, "verified-user-message", () =>
@@ -549,12 +577,27 @@ async function main() {
       charCount: sentUser.message.charCount,
       promptEchoVerification: sentUser.promptEchoVerification,
     };
+    receipt.messageSendState = {
+      status: "sent_verified",
+      automaticResendAllowed: false,
+      reason: "sent user message anchor verified",
+    };
+    const postSendProbe = await step(receipt, "capture-conversation-url-after-send", () => pageProbe(cdp));
+    const postSendConversationUrl = chatGptConversationScopeUrl(
+      postSendProbe.url || receipt.room.conversationUrl || connectedTarget?.url || "",
+    );
+    if (postSendConversationUrl && connectedTarget) {
+      finalConversationUrl = postSendConversationUrl;
+      connectedTarget = { ...connectedTarget, url: postSendConversationUrl };
+      receipt.room.conversationUrl = postSendConversationUrl;
+      if (receipt.sessionTarget) receipt.sessionTarget.url = postSendConversationUrl;
+      receipt.messageAnchor.sentUserMessage.conversationUrl = postSendConversationUrl;
+    }
     if (receipt.upload?.files?.length && !receipt.upload.ledger?.recorded) {
-      const postSendProbe = await step(receipt, "record-upload-ledger", async () => {
-        const probe = await pageProbe(cdp);
+      const postSendLedger = await step(receipt, "record-upload-ledger", async () => {
         const scopeKey = messageUploadScopeKey({
           projectId: project.projectId,
-          conversationUrl: probe.url || receipt.room.conversationUrl || connectedTarget?.url || "",
+          conversationUrl: postSendConversationUrl || receipt.room.conversationUrl || connectedTarget?.url || "",
         });
         if (!scopeKey) {
           return {
@@ -570,7 +613,7 @@ async function main() {
           scopeKey,
         }, { uploadKind: "message-attachment" });
       });
-      receipt.upload.ledger = postSendProbe;
+      receipt.upload.ledger = postSendLedger;
     }
 
     runState.update("waiting-for-assistant-start");
@@ -645,6 +688,7 @@ async function main() {
   } catch (error) {
     receipt.ok = false;
     receipt.errorCode = receipt.errorCode || error?.errorCode;
+    applySendStatusFromError(receipt, error);
     if (error?.details) receipt.failure = error.details;
     if (error?.details?.owner && !receipt.owner) receipt.owner = error.details.owner;
     if (error?.details?.lock && !receipt.lock) receipt.lock = error.details.lock;
@@ -660,10 +704,16 @@ async function main() {
       receipt,
       sentMarkdown: promptInput.prompt,
       receivedMarkdown: assistantText,
+      sendStatus: receipt.messageAnchor?.sentUserMessage
+        ? "sent_verified"
+        : receipt.messageSendState?.status === "send_status_unknown"
+          ? "send_status_unknown"
+          : "not_sent",
       stdoutRendered: stdoutThreadEcho,
     });
+    writeJson(resolve(runDir, "receipt.json"), receipt);
     let aliasRecord = null;
-    if (receipt.ok && freshThread) {
+    if (shouldRecordFreshThreadAfterCall(receipt, { freshThread }) && connectedTarget) {
       try {
         const freshRecord = recordFreshThread({
           aliasHint: session || null,
@@ -680,7 +730,7 @@ async function main() {
           ...(error?.details ? { details: error.details } : {}),
         };
       }
-    } else if (receipt.ok && session) {
+    } else if (session && connectedTarget && shouldRecordAliasUseAfterCall(receipt, { freshThread })) {
       try {
         aliasRecord = recordChatGptAliasUse({
           name: session,
@@ -690,13 +740,10 @@ async function main() {
           transcriptPath: resolve(runDir, "transcript.md"),
           agentRoom,
         });
+        if (!aliasRecord) markAliasRecordFailure(receipt, null);
         receipt.aliasRecord = aliasRecord;
       } catch (error) {
-        receipt.aliasRecordError = {
-          errorCode: error?.errorCode || "session.alias_update_failed",
-          error: String(error?.message || error),
-          ...(error?.details ? { details: error.details } : {}),
-        };
+        markAliasRecordFailure(receipt, error);
       }
     }
     if (recorder) {

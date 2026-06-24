@@ -140,6 +140,60 @@ export function findAssistantAfterUser(snapshot, userMessage) {
   ) || null;
 }
 
+function anchorHashes(anchor = {}) {
+  return [anchor.textSha256, anchor.normalizedTextSha256].filter(Boolean);
+}
+
+function anchorMatches(message, anchor = {}) {
+  const hashes = anchorHashes(anchor);
+  if (!hashes.length) return false;
+  return hashes.includes(message.textSha256) || hashes.includes(message.normalizedTextSha256);
+}
+
+export function resolveUserMessageAnchor(snapshot, anchor = {}) {
+  const ordinal = Number(anchor.ordinal);
+  if (!Number.isInteger(ordinal) || !anchorHashes(anchor).length) {
+    const error = new Error("Cannot recover ChatGPT read anchor without a user ordinal and message hash.");
+    error.errorCode = "response.user_anchor_incomplete";
+    error.details = {
+      ordinal: anchor.ordinal ?? null,
+      hasTextSha256: Boolean(anchor.textSha256),
+      hasNormalizedTextSha256: Boolean(anchor.normalizedTextSha256),
+    };
+    throw error;
+  }
+
+  const ordinalMessage = snapshot.find((message) => message.role === "user" && message.ordinal === ordinal) || null;
+  if (ordinalMessage) {
+    if (anchorMatches(ordinalMessage, anchor)) return ordinalMessage;
+    const error = new Error("Recovered ChatGPT user anchor ordinal did not match the saved message hash.");
+    error.errorCode = "response.user_anchor_mismatch";
+    error.details = {
+      ordinal,
+      observedTextSha256: ordinalMessage.textSha256,
+      observedNormalizedTextSha256: ordinalMessage.normalizedTextSha256,
+    };
+    throw error;
+  }
+
+  const hashMatches = snapshot.filter((message) => message.role === "user" && anchorMatches(message, anchor));
+  if (hashMatches.length === 1) return hashMatches[0];
+  const error = new Error(
+    hashMatches.length
+      ? "Recovered ChatGPT user anchor matched multiple messages."
+      : "Recovered ChatGPT user anchor was not found in the current conversation.",
+  );
+  error.errorCode = hashMatches.length
+    ? "response.user_anchor_ambiguous"
+    : "response.user_anchor_not_found";
+  error.details = {
+    ordinal,
+    matchCount: hashMatches.length,
+    observedUserOrdinals: snapshot.filter((message) => message.role === "user").map((message) => message.ordinal),
+  };
+  throw error;
+}
+
 export function assistantRunAfterUser(snapshot, userMessage) {
   const messages = snapshot.filter((message) => message.ordinal > userMessage.ordinal);
   const nextUser = messages.find((message) => message.role === "user");

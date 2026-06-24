@@ -49,6 +49,7 @@ function commandUsage(command) {
       "",
       "Sends one blocking prompt to ChatGPT Pro.",
       "Project calls open a new conversation by default. Reuse only with --reuse-room.",
+      "Without a Project URL, first-time alias calls need --new to bind a room.",
       "If the prompt was sent but the response timed out: Do not resend. Use:",
       "  chatgpt-pro read --alias=<same-name> --task-id=<same-id>",
       "",

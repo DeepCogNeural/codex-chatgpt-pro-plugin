@@ -84,9 +84,49 @@ try {
   });
   assert.equal(fresh.threadId, "chatgpt:fresh-review");
 
+  const legacyAlias = "main--task-task-a--agent-agent-a";
+  const newHashAlias = "main-0d6e4079f3--task-task-a-0d5c11d4a7--agent-agent-a-1f7fb33a25";
+  const legacyRegistry = JSON.parse(readFileSync(sessionRegistryPath, "utf8"));
+  legacyRegistry.rooms[legacyAlias] = {
+    ...legacyRegistry.rooms.main,
+    alias: legacyAlias,
+    requestedAlias: "main",
+    agent: { id: "agent-a", slug: "agent-a", source: "explicit" },
+    task: { id: "task-a", slug: "task-a", source: "explicit" },
+  };
+  delete legacyRegistry.rooms.main;
+  writeFileSync(sessionRegistryPath, `${JSON.stringify(legacyRegistry, null, 2)}\n`);
+  const migrated = recordChatGptAliasUse({
+    name: newHashAlias,
+    target: {
+      id: "target-1",
+      title: "Legacy Room",
+      url: "https://chatgpt.com/c/legacy-room",
+    },
+    runId: "run-migrated",
+    receiptPath: "/tmp/run-migrated/receipt.json",
+    transcriptPath: "/tmp/run-migrated/transcript.md",
+    agentRoom: {
+      requestedAlias: "main",
+      scoped: true,
+      scope: "task",
+      taskScoped: true,
+      agentScoped: false,
+      agent: { id: "agent-a", slug: "agent-a", source: "explicit" },
+      task: { id: "task-a", slug: "task-a", source: "explicit" },
+      taskTitle: "Review task",
+      roomLabel: "main / Review task / agent-a",
+    },
+  });
+  assert.equal(migrated.alias, newHashAlias);
+  const savedAfterMigration = JSON.parse(readFileSync(sessionRegistryPath, "utf8"));
+  assert.equal(savedAfterMigration.rooms[legacyAlias], undefined);
+  assert.equal(savedAfterMigration.rooms[newHashAlias].requestedAlias, "main");
+  assert.equal(savedAfterMigration.rooms[newHashAlias].lastRunId, "run-migrated");
+
   const saved = JSON.parse(readFileSync(sessionRegistryPath, "utf8"));
   assert.equal(saved.schemaVersion, 2);
-  assert.equal(saved.rooms.main.recentRuns.length, 1);
+  assert.equal(saved.rooms[newHashAlias].recentRuns[0].runId, "run-migrated");
   assert.equal(saved.freshThreads[0].aliasHint, "critic");
   assert.equal(existsSync(sessionRegistryPath), true);
 } finally {

@@ -28,7 +28,7 @@ export const defaultUploadLedgerPath = resolve(stateRoot, "chatgpt-upload-ledger
 
 export function chatGptConversationScopeUrl(url = "") {
   const value = String(url || "").trim();
-  const match = value.match(/^https:\/\/chatgpt\.com\/c\/[^/?#]+/i);
+  const match = value.match(/^https:\/\/chatgpt\.com\/(?:g\/[^/?#]+\/)?c\/[^/?#]+/i);
   return match ? match[0] : "";
 }
 

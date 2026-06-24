@@ -32,10 +32,23 @@ try {
   assert.equal(existsSync(resolve(repo, ".devspace", "runs")), false);
   assert.equal(existsSync(resolve(home, "locks", "browser-profile.lock")), false);
 
+  const readWithoutAlias = runHelp("read");
+  assert.equal(readWithoutAlias.status, 2, readWithoutAlias.stderr || readWithoutAlias.stdout);
+  assert.match(readWithoutAlias.stderr, /requires --alias/);
+  assert.equal(existsSync(resolve(repo, ".devspace", "runs")), false);
+  assert.equal(existsSync(resolve(home, "locks", "browser-profile.lock")), false);
+
   const callHelp = runHelp("call", "--help");
   assert.equal(callHelp.status, 0, callHelp.stderr || callHelp.stdout);
   assert.match(callHelp.stdout, /Usage: chatgpt-pro call/);
   assert.match(callHelp.stdout, /Do not resend/);
+  assert.match(callHelp.stdout, /first-time alias calls need --new/);
+
+  const splitPrompt = runHelp("call", "--prompt", "split prompt", "--response-mode=event");
+  assert.notEqual(splitPrompt.status, 0);
+  assert.doesNotMatch(splitPrompt.stderr, /Provide --prompt/);
+  assert.match(splitPrompt.stdout, /Message Not Sent To ChatGPT Pro/);
+  assert.match(splitPrompt.stdout, /split prompt/);
 
   const historyHelp = runHelp("history", "read", "--help");
   assert.equal(historyHelp.status, 0, historyHelp.stderr || historyHelp.stdout);

@@ -108,6 +108,10 @@ try {
     chatGptConversationScopeUrl("https://chatgpt.com/c/one?model=gpt-5"),
     "https://chatgpt.com/c/one",
   );
+  assert.equal(
+    chatGptConversationScopeUrl("https://chatgpt.com/g/polymarket-lp/c/one?model=gpt-5"),
+    "https://chatgpt.com/g/polymarket-lp/c/one",
+  );
   assert.equal(chatGptConversationScopeUrl("https://chatgpt.com/g/polymarket-lp"), "");
   assert.equal(
     messageUploadScopeKey({
@@ -117,6 +121,15 @@ try {
       conversationUrl: "https://chatgpt.com/c/one",
     }),
     "message|cgpt_repo|conversation:https://chatgpt.com/c/one",
+  );
+  assert.equal(
+    messageUploadScopeKey({
+      projectId: "cgpt_repo",
+      chatGptProjectUrl: "https://chatgpt.com/g/polymarket-lp",
+      session: "polymarket-lp",
+      conversationUrl: "https://chatgpt.com/g/polymarket-lp/c/one",
+    }),
+    "message|cgpt_repo|conversation:https://chatgpt.com/g/polymarket-lp/c/one",
   );
   assert.equal(
     messageUploadScopeKey({
