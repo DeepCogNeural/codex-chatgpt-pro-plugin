@@ -1,5 +1,15 @@
 # TASK_STATE
 
+## Active Fix — 2026-07-25
+
+- Goal: permanently prevent provisional ChatGPT `/c/WEB:...` URLs from being treated as committed conversations, wait for the real `/c/{id}` URL before any room-registry write, and make the normal Deep Research response budget 15 minutes.
+- Reproduction evidence: two Quant Application calls verified their sent user-message anchors but timed out after five minutes with no readable assistant text; both receipts retained provisional `WEB:` URLs, and the later browser target had moved to the real conversation.
+- Success criteria: deterministic tests reject `WEB:` for room identity and upload scope; new Project calls defer binding until a committed conversation URL exists; timed-out sent prompts still record the canonical room for anchored `read`; the installed package uses a 900,000 ms default; live smoke produces a canonical room URL and a valid prompt-bound response.
+- Safety: never resend or interrupt an active ChatGPT run; preserve exact sent-message anchoring.
+- Implemented: one shared committed-conversation URL parser rejects `WEB:`; every registry writer requires a committed URL; new calls wait for canonicalization before binding; old provisional lineage is removed when repaired; call/read/composer/message defaults now use 900,000 ms.
+- Additional live defects fixed: new target activation no longer depends on the target already appearing in the filtered ChatGPT target list, and the blocking call entrypoint now `await`s its full async lifecycle so it cannot exit early and strand the browser lock.
+- Verification: `npm run test:deterministic` passed before the final live fixes; focused tests and syntax checks passed. Live source call `2026-07-25T20-25-02-996Z-chatgpt-call` passed with a canonical UUID URL after a 1,780 ms commit wait, `responseTimeoutMs: 900000`, exact prompt echo, anchored response, and no `WEB:` registry value. Follow-up anchored `read` `2026-07-25T20-26-07-604Z-chatgpt-read-current` passed against the same URL.
+
 ## Goal
 
 Update `codex-chatgpt-pro-plugin` from upstream, then make the daily Codex -> ChatGPT Pro workflow reliable:

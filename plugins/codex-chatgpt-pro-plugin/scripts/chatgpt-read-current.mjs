@@ -5,6 +5,7 @@ import { now } from "../src/cdp-client.mjs";
 import { pageProbe, redactedProbe } from "../src/chatgpt-page.mjs";
 import { waitForAssistantResponseAfterUser } from "../src/chatgpt-composer.mjs";
 import { connectToChatGptSession, recordChatGptAliasUse } from "../src/chatgpt-sessions.mjs";
+import { committedConversationUrl } from "../src/chatgpt-conversation-url.mjs";
 import {
   resolveUserMessageAnchor,
   snapshotConversationMessages,
@@ -15,6 +16,7 @@ import { writeJson } from "../src/observe.mjs";
 import { ensureProjectState } from "../src/project-state.mjs";
 import {
   DEFAULT_CDP_PORT,
+  DEFAULT_RESPONSE_TIMEOUT_MS,
   DEFAULT_TARGET_URL,
   runDir as makeRunDir,
   runId as makeRunId,
@@ -69,7 +71,7 @@ const agentRoom = resolveAgentRoom({
   taskTitle: arg("task-title") || process.env.CHATGPT_TASK_TITLE || "",
 });
 const session = agentRoom.effectiveAlias;
-const responseTimeoutMs = Number(process.env.CHATGPT_RESPONSE_TIMEOUT_MS || 480_000);
+const responseTimeoutMs = Number(process.env.CHATGPT_RESPONSE_TIMEOUT_MS || DEFAULT_RESPONSE_TIMEOUT_MS);
 const stableMs = Number(process.env.CHATGPT_RESPONSE_STABLE_MS || 5_000);
 const completionMarker = completionMarkerFromEnv({ explicitMarker: arg("completion-marker") });
 const requireCompletionMarker = completionMarkerRequired({ disabled: flag("no-completion-marker") });
@@ -180,7 +182,16 @@ try {
   receipt.messageAnchor.responseBoundToSentPrompt = true;
   assistantText = response.assistantText;
   writeFileSync(resolve(runDir, "assistant.md"), assistantText, { mode: 0o600 });
-  const finalConversationUrl = response.probe?.url || before.url;
+  const finalConversationUrl = committedConversationUrl(response.probe?.url || before.url);
+  if (!finalConversationUrl) {
+    const error = new Error("ChatGPT response completed, but the conversation URL is still not committed.");
+    error.errorCode = "room.conversation_url_uncommitted";
+    error.details = {
+      conversationUrl: response.probe?.url || before.url || null,
+      provisionalWebUrlObserved: /\/c\/WEB:/i.test(response.probe?.url || before.url || ""),
+    };
+    throw error;
+  }
   if (connectedTarget && finalConversationUrl) {
     connectedTarget = { ...connectedTarget, url: finalConversationUrl };
   }

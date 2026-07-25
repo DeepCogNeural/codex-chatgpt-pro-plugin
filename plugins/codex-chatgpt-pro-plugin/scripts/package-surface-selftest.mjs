@@ -54,6 +54,7 @@ const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const manifest = JSON.parse(readFileSync(".codex-plugin/plugin.json", "utf8"));
 const marketplace = JSON.parse(readFileSync(".agents/plugins/marketplace.json", "utf8"));
 const codexConfig = readFileSync(".codex/config.toml", "utf8");
+const callScript = readFileSync("scripts/chatgpt-call.mjs", "utf8");
 assert.equal(manifest.name, pkg.name);
 assert.equal(manifest.skills, "./skills/");
 assert.equal(marketplace.plugins?.some((entry) =>
@@ -76,5 +77,6 @@ assert.match(pkg.scripts["test:live"], /live:history-export/);
 assert.match(pkg.scripts["test:live"], /live:rooms-rebind/);
 assert.match(pkg.scripts["test:live"], /live:rooms-repair/);
 assert.match(pkg.scripts["test:live"], /live:repo-thread-matrix/);
+assert.match(callScript, /await main\(\);/, "blocking call entrypoint must await the full live operation");
 
 console.log(JSON.stringify({ ok: true, tested: "package-surface" }, null, 2));

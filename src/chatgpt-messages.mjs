@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { evaluate, now, sleep } from "./cdp-client.mjs";
+import { DEFAULT_RESPONSE_TIMEOUT_MS } from "./runtime-config.mjs";
 
 export function sha256(text) {
   return createHash("sha256").update(String(text || "")).digest("hex");
@@ -218,7 +219,7 @@ export function assistantRunAfterUser(snapshot, userMessage) {
   };
 }
 
-export async function waitForAssistantAfterUserMessage(cdp, userMessage, { timeoutMs = 240_000 } = {}) {
+export async function waitForAssistantAfterUserMessage(cdp, userMessage, { timeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS } = {}) {
   const startedAt = now();
   let lastSnapshot = [];
   while (now() - startedAt < timeoutMs) {

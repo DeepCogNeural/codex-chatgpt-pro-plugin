@@ -21,7 +21,6 @@ import { buildRepoContextBundle } from "../src/repo-context-bundle.mjs";
 import { decideRepoContextMode } from "../src/repo-context-policy.mjs";
 import {
   cleanupStaleUploadUi,
-  chatGptConversationScopeUrl,
   defaultUploadLedgerPath,
   messageUploadScopeKey,
   recordUploadedFiles,
@@ -41,6 +40,10 @@ import {
   recordChatGptAliasUse,
   recordFreshThread,
 } from "../src/chatgpt-sessions.mjs";
+import {
+  committedConversationUrl,
+  waitForCommittedConversationUrl,
+} from "../src/chatgpt-conversation-url.mjs";
 import { sealRunEnvelope, threadEchoMode } from "../src/chatgpt/run-envelope.mjs";
 import { acquireChatGptOperation } from "../src/chatgpt-operation.mjs";
 import {
@@ -53,6 +56,7 @@ import { ensureProjectState } from "../src/project-state.mjs";
 import {
   boolEnv,
   DEFAULT_CDP_PORT,
+  DEFAULT_RESPONSE_TIMEOUT_MS,
   DEFAULT_TARGET_URL,
   runDir as makeRunDir,
   runId as makeRunId,
@@ -244,7 +248,7 @@ async function main() {
   const requestedNewBoundThread = flag("new") || flag("new-thread");
   const reuseRoom = flag("reuse-room") || flag("continue-room") || boolEnv("CHATGPT_REUSE_ROOM");
   const conversationUrl = arg("conversation-url") || "";
-  const responseTimeoutMs = Number(process.env.CHATGPT_RESPONSE_TIMEOUT_MS || 300_000);
+  const responseTimeoutMs = Number(process.env.CHATGPT_RESPONSE_TIMEOUT_MS || DEFAULT_RESPONSE_TIMEOUT_MS);
   const stableMs = Number(process.env.CHATGPT_RESPONSE_STABLE_MS || 4_000);
   const explicitLevel = arg("level") || arg("intelligence") || process.env.CHATGPT_LEVEL || process.env.CHATGPT_INTELLIGENCE || "";
   const levelRequest = resolveLevelRequest({
@@ -313,6 +317,7 @@ async function main() {
       requestedAlias: agentRoom.requestedAlias || null,
       threadMode,
       aliasBound: threadPolicy.aliasBound,
+      bindingDeferredUntilCommittedUrl: newBoundThread,
       conversationUrl: conversationUrl || null,
       scope: agentRoom.scope,
       agentScoped: agentRoom.agentScoped,
@@ -423,11 +428,10 @@ async function main() {
       receipt.room.conversationUrl = target.url;
     } else if (newBoundThread) {
       const target = await step(receipt, "open-bound-thread", () =>
-        newChatGptSession(port, { name: session, url: targetUrl, bind: true }),
+        newChatGptSession(port, { name: session, url: targetUrl, bind: false }),
       );
-      const connected = await connectToChatGptSession(port, session, { agentRoom });
-      cdp = connected.cdp;
-      connectedTarget = connected.target || target;
+      cdp = await CdpSession.open(target.webSocketDebuggerUrl);
+      connectedTarget = target;
       receipt.sessionTarget = {
         targetId: connectedTarget.id,
         title: connectedTarget.title,
@@ -582,17 +586,18 @@ async function main() {
       automaticResendAllowed: false,
       reason: "sent user message anchor verified",
     };
-    const postSendProbe = await step(receipt, "capture-conversation-url-after-send", () => pageProbe(cdp));
-    const postSendConversationUrl = chatGptConversationScopeUrl(
-      postSendProbe.url || receipt.room.conversationUrl || connectedTarget?.url || "",
+    const committedConversation = await step(receipt, "wait-for-committed-conversation-url", () =>
+      waitForCommittedConversationUrl(cdp, { timeoutMs: responseTimeoutMs }),
     );
-    if (postSendConversationUrl && connectedTarget) {
-      finalConversationUrl = postSendConversationUrl;
-      connectedTarget = { ...connectedTarget, url: postSendConversationUrl };
-      receipt.room.conversationUrl = postSendConversationUrl;
-      if (receipt.sessionTarget) receipt.sessionTarget.url = postSendConversationUrl;
-      receipt.messageAnchor.sentUserMessage.conversationUrl = postSendConversationUrl;
-    }
+    const postSendConversationUrl = committedConversation.conversationUrl;
+    finalConversationUrl = postSendConversationUrl;
+    connectedTarget = { ...connectedTarget, url: postSendConversationUrl };
+    receipt.room.conversationUrl = postSendConversationUrl;
+    receipt.room.bindingDeferredUntilCommittedUrl = false;
+    receipt.room.committedConversationId = committedConversation.conversationId;
+    receipt.room.conversationCommitWaitMs = committedConversation.waitedMs;
+    if (receipt.sessionTarget) receipt.sessionTarget.url = postSendConversationUrl;
+    receipt.messageAnchor.sentUserMessage.conversationUrl = postSendConversationUrl;
     if (receipt.upload?.files?.length && !receipt.upload.ledger?.recorded) {
       const postSendLedger = await step(receipt, "record-upload-ledger", async () => {
         const scopeKey = messageUploadScopeKey({
@@ -660,7 +665,7 @@ async function main() {
         })(${JSON.stringify(agentRoom.roomLabel)})`),
       );
     }
-    finalConversationUrl = response.probe?.url || null;
+    finalConversationUrl = committedConversationUrl(response.probe?.url) || postSendConversationUrl;
     if (connectedTarget && finalConversationUrl) {
       connectedTarget = { ...connectedTarget, url: finalConversationUrl };
       receipt.room.conversationUrl = finalConversationUrl;
@@ -819,4 +824,4 @@ async function main() {
   process.exit(exitCodeForReceipt(receipt));
 }
 
-main();
+await main();

@@ -97,7 +97,7 @@ try {
         targetCommitted: Boolean(conversationIdFromUrl(target.url)),
         note: conversationIdFromUrl(target.url)
           ? "new room bound to a committed ChatGPT conversation URL"
-          : "new room is bound to an uncommitted ChatGPT target; the first call will update the final conversation URL after send",
+          : "new target opened, but room binding is deferred until a sent prompt produces a committed conversation URL",
       };
     });
     result = {

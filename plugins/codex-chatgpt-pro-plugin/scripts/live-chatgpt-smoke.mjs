@@ -30,6 +30,7 @@ import {
 import {
   boolEnv,
   DEFAULT_CDP_PORT,
+  DEFAULT_RESPONSE_TIMEOUT_MS,
   DEFAULT_TARGET_URL,
   runDir as makeRunDir,
   runId as makeRunId,
@@ -39,7 +40,7 @@ import { ensureProjectState } from "../src/project-state.mjs";
 const TARGET_URL = process.env.BROWSER_TARGET_URL || DEFAULT_TARGET_URL;
 const REQUESTED_LEVEL = process.env.CHATGPT_LEVEL || process.env.CHATGPT_INTELLIGENCE || "";
 const REQUESTED_MODEL = process.env.CHATGPT_MODEL || "";
-const RESPONSE_TIMEOUT_MS = Number(process.env.CHATGPT_RESPONSE_TIMEOUT_MS || 240_000);
+const RESPONSE_TIMEOUT_MS = Number(process.env.CHATGPT_RESPONSE_TIMEOUT_MS || DEFAULT_RESPONSE_TIMEOUT_MS);
 const NEW_CHAT_SETTLE_MS = Number(process.env.CHATGPT_NEW_CHAT_SETTLE_MS || 20_000);
 const SESSION = process.env.CHATGPT_SESSION || "";
 const NEW_CHAT = boolEnv("CHATGPT_NEW_CHAT", !SESSION && TARGET_URL === DEFAULT_TARGET_URL);

@@ -10,6 +10,7 @@ process.env.CHATGPT_REPO_ROOT = repo;
 process.env.CHATGPT_PRO_HOME = home;
 
 const {
+  conversationIdFromUrl,
   normalizeSessionRegistry,
   recordChatGptAliasUse,
   recordFreshThread,
@@ -18,7 +19,68 @@ const {
 const { ensureProjectState } = await import(`../src/project-state.mjs?test=${Date.now()}`);
 
 try {
+  assert.equal(conversationIdFromUrl("https://chatgpt.com/c/WEB:temporary-thread"), "");
+  assert.equal(conversationIdFromUrl("https://chatgpt.com/c/committed-thread"), "committed-thread");
+
   const project = ensureProjectState();
+  assert.throws(
+    () => recordFreshThread({
+      aliasHint: "temporary",
+      target: {
+        id: "target-web",
+        title: "Temporary",
+        url: "https://chatgpt.com/c/WEB:temporary-thread",
+      },
+      runId: "web-run",
+    }),
+    (error) => error.errorCode === "room.conversation_url_invalid",
+  );
+  const firstCommittedRoom = recordChatGptAliasUse({
+    name: "new-room",
+    target: {
+      id: "target-new-room",
+      title: "New committed room",
+      url: "https://chatgpt.com/c/new-committed-room",
+    },
+    runId: "new-room-run",
+    receiptPath: "/tmp/new-room-run/receipt.json",
+    transcriptPath: "/tmp/new-room-run/transcript.md",
+  });
+  assert.equal(firstCommittedRoom.activeConversationUrl, "https://chatgpt.com/c/new-committed-room");
+  assert.equal(firstCommittedRoom.callCount, 1);
+
+  const provisional = normalizeSessionRegistry({
+    rooms: {
+      provisional: {
+        targetId: "target-provisional",
+        url: "https://chatgpt.com/c/WEB:temporary-thread",
+        title: "Temporary Room",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        lineage: [{
+          threadId: "chatgpt:WEB:temporary-thread",
+          conversationUrl: "https://chatgpt.com/c/WEB:temporary-thread",
+          status: "active",
+          openedAt: "2026-01-01T00:00:00.000Z",
+        }],
+      },
+    },
+  }, project);
+  mkdirSync(dirname(sessionRegistryPath), { recursive: true });
+  writeFileSync(sessionRegistryPath, `${JSON.stringify(provisional, null, 2)}\n`);
+  const repairedProvisional = recordChatGptAliasUse({
+    name: "provisional",
+    target: {
+      id: "target-provisional",
+      title: "Committed Room",
+      url: "https://chatgpt.com/c/committed-after-web",
+    },
+    runId: "repaired-web-run",
+    receiptPath: "/tmp/repaired-web-run/receipt.json",
+    transcriptPath: "/tmp/repaired-web-run/transcript.md",
+  });
+  assert.equal(repairedProvisional.activeConversationUrl, "https://chatgpt.com/c/committed-after-web");
+  assert.equal(JSON.stringify(repairedProvisional).includes("WEB:"), false);
+
   const legacy = normalizeSessionRegistry({
     aliases: {
       main: {

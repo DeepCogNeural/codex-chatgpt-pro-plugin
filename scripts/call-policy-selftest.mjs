@@ -12,8 +12,10 @@ import {
   shouldRecordFreshThreadAfterCall,
   shouldRecordAliasUseAfterCall,
 } from "../src/chatgpt-call-policy.mjs";
+import { DEFAULT_RESPONSE_TIMEOUT_MS } from "../src/runtime-config.mjs";
 
 assert.equal(DEFAULT_COMPLETION_MARKER, "输出完毕");
+assert.equal(DEFAULT_RESPONSE_TIMEOUT_MS, 900_000);
 assert.equal(completionMarkerRequired({ env: {} }), true);
 assert.equal(completionMarkerRequired({ env: { CHATGPT_REQUIRE_COMPLETION_MARKER: "0" } }), false);
 

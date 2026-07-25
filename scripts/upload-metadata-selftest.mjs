@@ -112,6 +112,8 @@ try {
     chatGptConversationScopeUrl("https://chatgpt.com/g/polymarket-lp/c/one?model=gpt-5"),
     "https://chatgpt.com/g/polymarket-lp/c/one",
   );
+  assert.equal(chatGptConversationScopeUrl("https://chatgpt.com/c/WEB:temporary-thread"), "");
+  assert.equal(chatGptConversationScopeUrl("https://chatgpt.com/g/polymarket-lp/c/WEB:temporary-thread"), "");
   assert.equal(chatGptConversationScopeUrl("https://chatgpt.com/g/polymarket-lp"), "");
   assert.equal(
     messageUploadScopeKey({

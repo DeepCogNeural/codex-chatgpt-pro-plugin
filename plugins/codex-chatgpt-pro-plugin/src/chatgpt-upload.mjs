@@ -4,6 +4,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync,
 import { evaluate, sleep } from "./cdp-client.mjs";
 import { writeJsonAtomic } from "./atomic-json.mjs";
 import { stateRoot } from "./runtime-config.mjs";
+import { committedConversationUrl } from "./chatgpt-conversation-url.mjs";
 
 function fileSha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -27,9 +28,7 @@ function utcFileStamp(date = new Date()) {
 export const defaultUploadLedgerPath = resolve(stateRoot, "chatgpt-upload-ledger.json");
 
 export function chatGptConversationScopeUrl(url = "") {
-  const value = String(url || "").trim();
-  const match = value.match(/^https:\/\/chatgpt\.com\/(?:g\/[^/?#]+\/)?c\/[^/?#]+/i);
-  return match ? match[0] : "";
+  return committedConversationUrl(url);
 }
 
 export function messageUploadScopeKey({
