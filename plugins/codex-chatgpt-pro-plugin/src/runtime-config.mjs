@@ -10,6 +10,7 @@ export const chromeProfilesRoot = resolve(devspaceRoot, "chrome-profiles");
 
 export const DEFAULT_TARGET_URL = "https://chatgpt.com/";
 export const DEFAULT_CDP_PORT = 9222;
+export const DEFAULT_RESPONSE_TIMEOUT_MS = 900_000;
 
 export function boolEnv(name, fallback = false) {
   const value = process.env[name];

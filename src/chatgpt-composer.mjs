@@ -11,6 +11,7 @@ import {
   completionMarkerError,
   hasCompletionMarker,
 } from "./chatgpt-call-policy.mjs";
+import { DEFAULT_RESPONSE_TIMEOUT_MS } from "./runtime-config.mjs";
 
 export function findExactTokenTurn(turns, token) {
   return turns.find((turn) =>
@@ -541,7 +542,7 @@ function markerSatisfied(text, { requireCompletionMarker = false, completionMark
 }
 
 export async function waitForAssistantResponse(cdp, initialAssistantCount, {
-  timeoutMs = 240_000,
+  timeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS,
   stableMs = 4_000,
   requireCompletionMarker = false,
   completionMarker = DEFAULT_COMPLETION_MARKER,
@@ -614,7 +615,7 @@ export async function waitForAssistantResponse(cdp, initialAssistantCount, {
 }
 
 export async function waitForAssistantResponseAfterUser(cdp, userMessage, {
-  timeoutMs = 240_000,
+  timeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS,
   stableMs = 4_000,
   requireCompletionMarker = false,
   completionMarker = DEFAULT_COMPLETION_MARKER,

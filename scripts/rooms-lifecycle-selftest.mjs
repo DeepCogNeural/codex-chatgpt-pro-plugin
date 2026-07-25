@@ -88,6 +88,16 @@ try {
   ], { expectOk: false });
   assert.equal(invalid.ok, false);
   assert.equal(invalid.errorCode, "room.conversation_url_invalid");
+
+  const provisional = run([
+    "rooms",
+    "rebind",
+    "--alias=bad-web",
+    "--conversation-url=https://chatgpt.com/c/WEB:temporary-thread",
+    "--registry-only",
+  ], { expectOk: false });
+  assert.equal(provisional.ok, false);
+  assert.equal(provisional.errorCode, "room.conversation_url_invalid");
 } finally {
   rmSync(repo, { recursive: true, force: true });
   rmSync(home, { recursive: true, force: true });

@@ -139,6 +139,11 @@ do not resend unless the user explicitly asks. If a sent prompt cannot be
 recorded in the room registry, the receipt is a non-zero failure with
 `doNotResend: true` and a recovery `conversationUrl`.
 
+The default response budget is 15 minutes. A new ChatGPT conversation may
+briefly expose `/c/WEB:...`; that value is provisional and must never be used as
+a room id, upload scope, or registry URL. `call` waits for the committed
+`/c/{id}` URL before binding the alias. Do not manually rebind a `WEB:` URL.
+
 `read --help` is safe and must return CLI usage without touching the browser.
 
 ## ChatGPT Project Workflow
@@ -421,6 +426,8 @@ and send no prompt. `rooms rebind --registry-only` is the explicit offline
 escape hatch; it validates the ChatGPT conversation URL shape but records
 `roomTargetVerification: not_verified_registry_only` until a later live
 operation verifies or repairs the target.
+If `rooms new` opens a provisional `/c/WEB:...` target, it leaves the registry
+unchanged. Prefer `call --new` when the new alias must be committed immediately.
 
 Thread modes:
 
@@ -591,6 +598,10 @@ Fail closed when provenance is unclear:
 - `room.conversation_url_required`: room rebind needs a ChatGPT conversation URL
 - `room.conversation_url_invalid`: a room URL was not a valid `chatgpt.com/c/...`
   conversation URL
+- `room.conversation_url_uncommitted`: ChatGPT still exposed a provisional
+  target instead of a committed conversation URL
+- `room.conversation_url_commit_timeout`: the sent prompt did not receive a
+  committed conversation URL within the response budget; do not resend
 - `model.option_unavailable`: requested Pro/model/level choice is unavailable
 - `composer.clear_failed`: stale composer text could not be cleared before typing
 - `composer.input_mismatch`: composer text did not match the prompt before send

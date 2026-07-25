@@ -35,7 +35,7 @@ Input:
     "intelligence": "Pro",
     "model": "5.5",
     "responseMode": "blocking",
-    "timeoutMs": 300000
+    "timeoutMs": 900000
   }
 }
 ```
@@ -189,6 +189,10 @@ default `rebind`, and `repair` acquire the global browser lock and send no
 prompt. `--registry-only` validates the ChatGPT URL shape but records
 `roomTargetVerification: not_verified_registry_only` until a live operation
 verifies or repairs the target.
+An empty target can temporarily show `/c/WEB:...`; this is a browser placeholder,
+not a conversation identity. It must never enter the room registry. `rooms new`
+therefore defers binding until a later sent prompt produces a committed
+`/c/{id}` URL; `call --new` is the normal create-and-bind path.
 
 Call thread modes:
 
@@ -297,7 +301,7 @@ For multi-agent/multi-repo operation, the posture is:
 - Project-scoped calls create a new task-scoped conversation by default unless
   `--reuse-room` is explicit
 - non-Project first-time alias calls require `--new` / `--new-thread`
-- use `rooms new` to deliberately move an alias to a clean long-lived thread
+- use `call --new` to deliberately move an alias to a clean long-lived thread
 - use `--fresh` only for one-off clean rooms
 
 Project state:
@@ -580,6 +584,8 @@ For `chatgpt-pro call`, receipt data should include:
 - `session.stale_conversation`
 - `room.conversation_url_required`
 - `room.conversation_url_invalid`
+- `room.conversation_url_uncommitted`
+- `room.conversation_url_commit_timeout`
 - `page.load_timeout`
 - `page.composer_not_found`
 - `model.option_unavailable`

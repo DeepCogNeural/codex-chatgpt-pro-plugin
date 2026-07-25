@@ -101,8 +101,7 @@ chatgpt-pro call --alias=polymarket-lp --shared-room --reuse-room --prompt-file=
 chatgpt-pro status --alias=main
 
 # Open a clean, independent critic room and review a file
-chatgpt-pro rooms new --alias=critic
-chatgpt-pro call --alias=critic --prompt-file=review.md
+chatgpt-pro call --alias=critic --new --prompt-file=review.md
 
 # Bind a ChatGPT thread you started by hand, then pull its history
 chatgpt-pro rooms rebind --alias=spec --conversation-url=https://chatgpt.com/c/...
@@ -118,6 +117,10 @@ chatgpt-pro cleanup duplicate-upload
 Room lifecycle commands (`rooms new`, `rooms rebind`, `rooms repair`, and
 `rooms list/show`) are repo-scoped, so the same alias can exist safely in
 different repositories.
+`rooms new` may open an empty target, but it does not write that target to the
+registry until ChatGPT assigns a committed conversation URL. For a new room
+that must be usable immediately, prefer `call --new`: after the prompt is sent,
+the CLI waits for the real `/c/{id}` URL and only then records the alias.
 
 By default, `call` asks for the best available Pro reasoning level, preferring
 `Pro Extended` and falling back to `Pro` when the live UI exposes only that
@@ -143,6 +146,9 @@ chatgpt-pro read --alias=polymarket-lp --task-id=lp-release-review
 `chatgpt-pro call` receipt for that room, then reads only the assistant output
 after that exact user message. If the anchor is missing, ambiguous, or points
 at a different conversation, it fails closed instead of returning an old answer.
+The normal response budget is 15 minutes so Deep Research can finish without
+being mistaken for a lost response. ChatGPT's provisional `/c/WEB:...` URL is
+never treated as a conversation identity, upload scope, or registry binding.
 If a sent prompt cannot be written back to the room registry, the receipt exits
 non-zero, sets `doNotResend: true`, and keeps the real `conversationUrl` for
 manual recovery.
@@ -297,7 +303,7 @@ Common runtime switches: `BROWSER_POSTURE=headed|headless`,
 `CHATGPT_COMPLETION_MARKER` (default `输出完毕`),
 `CHATGPT_REQUIRE_COMPLETION_MARKER=0` only for transport debugging,
 `CHATGPT_PROJECT_URL`, `CHATGPT_AGENT_ID`, `CHATGPT_SHARED_ROOM=1`,
-`CHATGPT_TASK_TITLE`, `CHATGPT_RESPONSE_TIMEOUT_MS` (default `240000`),
+`CHATGPT_TASK_TITLE`, `CHATGPT_RESPONSE_TIMEOUT_MS` (default `900000`),
 `CHATGPT_REPO_CONTEXT_MODE=auto|upload|inline|off`,
 `CHATGPT_CONFIRM_REPO_CONTEXT_UPLOAD=1`, `CHATGPT_LOCK_TIMEOUT_MS`
 (default `600000`), `BROWSER_OBSERVER=1` (print a run-inspector URL). See the
